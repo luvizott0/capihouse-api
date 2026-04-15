@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Spatie\Fractal\Facades\Fractal;
 
 class AuthController extends ApiController
@@ -34,7 +35,7 @@ class AuthController extends ApiController
 
         return $this->created(
             $data['data'],
-            'Registro realizado com sucesso. Aguarde a aprovação do administrador.'
+            'Pedido de registro enviado ao administrador.'
         );
     }
 
@@ -47,10 +48,13 @@ class AuthController extends ApiController
         $password = $request->validated('password');
 
         // Determine if login is email or username
-        $fieldType = filter_var($login, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+        $isEmail = filter_var($login, FILTER_VALIDATE_EMAIL) !== false;
 
-        // Find user by email or username
-        $user = User::where($fieldType, $login)->first();
+        // Find user by email or username (case-insensitive)
+        $normalizedLogin = Str::lower($login);
+        $user = $isEmail
+            ? User::whereRaw('LOWER(email) = ?', [$normalizedLogin])->first()
+            : User::whereRaw('LOWER(username) = ?', [$normalizedLogin])->first();
 
         // Check credentials
         if (! $user || ! Hash::check($password, $user->password)) {
