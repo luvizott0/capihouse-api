@@ -15,25 +15,23 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// API V1 Routes
-Route::prefix('v1')->group(function () {
-    // Health check - public
-    Route::get('/health', HealthController::class)->middleware('throttle:public');
+// API Routes
+// Health check - public
+Route::get('/health', HealthController::class)->middleware('throttle:public');
 
-    // Auth routes - guest only with rate limiting
-    Route::prefix('auth')->middleware('throttle:auth')->group(function () {
-        Route::post('/register', [AuthController::class, 'register'])->middleware('guest');
-        Route::post('/login', [AuthController::class, 'login'])->middleware('guest');
-    });
+// Auth routes - guest only with rate limiting
+Route::prefix('auth')->middleware('throttle:auth')->group(function () {
+    Route::post('/register', [AuthController::class, 'register'])->middleware('guest');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('guest');
+});
 
-    // Auth routes - authenticated
-    Route::prefix('auth')->middleware(['auth:sanctum', 'throttle:api'])->group(function () {
-        Route::post('/logout', [AuthController::class, 'logout']);
-        Route::get('/user', [AuthController::class, 'user']);
-    });
+// Auth routes - authenticated
+Route::prefix('auth')->middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/user', [AuthController::class, 'user']);
+});
 
-    // Protected routes
-    Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
-        // Future protected routes will be added here
-    });
+// Protected routes
+Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+    // Future protected routes will be added here
 });

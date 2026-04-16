@@ -12,7 +12,7 @@ class RegisterTest extends TestCase
 
     public function test_user_can_register_with_valid_data(): void
     {
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'username' => 'testuser',
             'email' => 'test@example.com',
@@ -23,7 +23,7 @@ class RegisterTest extends TestCase
         $response->assertStatus(201)
             ->assertJson([
                 'status' => 'success',
-                'message' => 'Registro realizado com sucesso. Aguarde a aprovação do administrador.',
+                'message' => 'Pedido de registro enviado ao administrador.',
             ])
             ->assertJsonPath('data.name', 'Test User')
             ->assertJsonPath('data.username', 'testuser')
@@ -40,7 +40,7 @@ class RegisterTest extends TestCase
 
     public function test_registration_requires_name(): void
     {
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/auth/register', [
             'username' => 'testuser',
             'email' => 'test@example.com',
             'password' => 'password123',
@@ -53,7 +53,7 @@ class RegisterTest extends TestCase
 
     public function test_registration_requires_username(): void
     {
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'email' => 'test@example.com',
             'password' => 'password123',
@@ -68,7 +68,7 @@ class RegisterTest extends TestCase
     {
         User::factory()->create(['username' => 'existinguser']);
 
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'username' => 'existinguser',
             'email' => 'test@example.com',
@@ -84,7 +84,7 @@ class RegisterTest extends TestCase
     {
         User::factory()->create(['email' => 'existing@example.com']);
 
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'username' => 'testuser',
             'email' => 'existing@example.com',
@@ -98,7 +98,7 @@ class RegisterTest extends TestCase
 
     public function test_registration_requires_password_confirmation(): void
     {
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'username' => 'testuser',
             'email' => 'test@example.com',
@@ -112,7 +112,7 @@ class RegisterTest extends TestCase
 
     public function test_registration_requires_minimum_password_length(): void
     {
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'username' => 'testuser',
             'email' => 'test@example.com',
@@ -126,7 +126,7 @@ class RegisterTest extends TestCase
 
     public function test_username_only_allows_alpha_dash_characters(): void
     {
-        $response = $this->postJson('/api/v1/auth/register', [
+        $response = $this->postJson('/api/auth/register', [
             'name' => 'Test User',
             'username' => 'test user!',
             'email' => 'test@example.com',

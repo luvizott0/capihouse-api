@@ -8,7 +8,7 @@ class HealthCheckTest extends TestCase
 {
     public function test_health_check_returns_success(): void
     {
-        $response = $this->getJson('/api/v1/health');
+        $response = $this->getJson('/api/health');
 
         $response->assertStatus(200)
             ->assertJson([
@@ -29,7 +29,7 @@ class HealthCheckTest extends TestCase
 
     public function test_health_check_returns_correct_data_types(): void
     {
-        $response = $this->getJson('/api/v1/health');
+        $response = $this->getJson('/api/health');
 
         $data = $response->json('data');
 
