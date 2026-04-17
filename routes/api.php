@@ -1,7 +1,10 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\HealthController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\Api\V1\Admin\FeelingController as AdminFeelingController;
+use App\Http\Controllers\Api\V1\FeelingController;
+use App\Http\Controllers\Api\V1\PostController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,24 +18,33 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// API V1 Routes
-Route::prefix('v1')->group(function () {
-    // Health check - public
-    Route::get('/health', HealthController::class)->middleware('throttle:public');
+// API Routes
+// Health check - public
+Route::get('/health', HealthController::class)->middleware('throttle:public');
 
-    // Auth routes - public with rate limiting
-    Route::prefix('auth')->middleware('throttle:public')->group(function () {
-        // Auth routes will be added here
-    });
+// Auth routes - guest only with rate limiting
+Route::prefix('auth')->middleware('throttle:auth')->group(function () {
+    Route::post('/register', [AuthController::class, 'register'])->middleware('guest');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('guest');
+});
 
-    // Protected routes
-    Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
-        Route::get('/user', function (Request $request) {
-            return response()->json([
-                'status' => 'success',
-                'message' => 'User retrieved successfully',
-                'data' => $request->user(),
-            ]);
-        });
+// Auth routes - authenticated
+Route::prefix('auth')->middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/user', [AuthController::class, 'user']);
+});
+
+// Protected routes
+Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+    Route::get('/posts', [PostController::class, 'index']);
+    Route::post('/posts', [PostController::class, 'store']);
+
+    Route::get('/feelings', [FeelingController::class, 'index']);
+
+    Route::prefix('admin')->group(function () {
+        Route::get('/feelings', [AdminFeelingController::class, 'index']);
+        Route::post('/feelings', [AdminFeelingController::class, 'store']);
+        Route::put('/feelings/{id}', [AdminFeelingController::class, 'update']);
+        Route::delete('/feelings/{id}', [AdminFeelingController::class, 'destroy']);
     });
 });

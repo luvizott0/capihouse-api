@@ -26,6 +26,10 @@ return Application::configure(basePath: dirname(__DIR__))
             RateLimiter::for('public', function (Request $request) {
                 return Limit::perMinute(10)->by($request->ip());
             });
+
+            RateLimiter::for('auth', function (Request $request) {
+                return Limit::perMinute(10)->by($request->ip());
+            });
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
