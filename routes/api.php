@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\Admin\FeelingController as AdminFeelingController;
+use App\Http\Controllers\Api\V1\FeelingController;
+use App\Http\Controllers\Api\V1\PostController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -33,5 +36,15 @@ Route::prefix('auth')->middleware(['auth:sanctum', 'throttle:api'])->group(funct
 
 // Protected routes
 Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
-    // Future protected routes will be added here
+    Route::get('/posts', [PostController::class, 'index']);
+    Route::post('/posts', [PostController::class, 'store']);
+
+    Route::get('/feelings', [FeelingController::class, 'index']);
+
+    Route::prefix('admin')->group(function () {
+        Route::get('/feelings', [AdminFeelingController::class, 'index']);
+        Route::post('/feelings', [AdminFeelingController::class, 'store']);
+        Route::put('/feelings/{id}', [AdminFeelingController::class, 'update']);
+        Route::delete('/feelings/{id}', [AdminFeelingController::class, 'destroy']);
+    });
 });
