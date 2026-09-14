@@ -14,18 +14,42 @@ class PostController extends Controller
     public function index(Request $request)
     {
         $userId = auth()->id();
+        $isAdmin = auth()->user()->isAdmin();
 
-        $posts = Post::with([
+        $query = Post::with([
             'user',
+            'group:id,name',
             'media',
             'feeling',
             'hashtags',
             'comments.user',
             'likes'
         ])
-        ->withCount(['likes', 'comments'])
-        ->latest()
-        ->paginate(15);
+        ->withCount(['likes', 'comments']);
+
+        if ($request->filled('group_id')) {
+            $groupId = $request->input('group_id');
+            // Check if user is accepted member of the group
+            $isMember = auth()->user()->acceptedGroups()->where('groups.id', $groupId)->exists();
+            if (!$isMember && !$isAdmin) {
+                return response()->json(['message' => 'Você não tem permissão para visualizar posts deste grupo.'], 403);
+            }
+            $query->where('group_id', $groupId);
+        } else {
+            // General feed: public posts + posts of groups user is an accepted member of
+            $query->where(function ($q) use ($userId, $isAdmin) {
+                $q->whereNull('group_id');
+                if ($isAdmin) {
+                    $q->orWhereNotNull('group_id');
+                } else {
+                    $q->orWhereHas('group.acceptedMembers', function ($m) use ($userId) {
+                        $m->where('users.id', $userId);
+                    });
+                }
+            });
+        }
+
+        $posts = $query->latest()->paginate(15);
 
         // Transform collection to append is_liked by current user
         $posts->getCollection()->transform(function ($post) use ($userId) {
@@ -40,6 +64,7 @@ class PostController extends Controller
     {
         $request->validate([
             'content' => 'nullable|string|max:2000',
+            'group_id' => 'nullable|exists:groups,id',
             'feeling_name' => 'nullable|string|max:10',
             'feeling_emoji' => 'nullable|string|max:32',
             'hashtags' => 'nullable|array',
@@ -52,8 +77,17 @@ class PostController extends Controller
             return response()->json(['message' => 'O post precisa ter texto ou mídia.'], 422);
         }
 
+        $groupId = $request->input('group_id');
+        if ($groupId) {
+            $isMember = auth()->user()->acceptedGroups()->where('groups.id', $groupId)->exists();
+            if (!$isMember && !auth()->user()->isAdmin()) {
+                return response()->json(['message' => 'Você precisa ser membro do grupo para publicar nele.'], 403);
+            }
+        }
+
         $post = Post::create([
             'user_id' => auth()->id(),
+            'group_id' => $groupId,
             'content' => $request->input('content'),
         ]);
 
@@ -93,7 +127,7 @@ class PostController extends Controller
             }
         }
 
-        $post->load(['user', 'media', 'feeling', 'hashtags', 'comments.user', 'likes']);
+        $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'comments.user', 'likes']);
         $post->is_liked = false;
 
         return response()->json($post, 201);
@@ -155,7 +189,7 @@ class PostController extends Controller
             $post->hashtags()->sync($hashtagIds);
         }
 
-        $post->load(['user', 'media', 'feeling', 'hashtags', 'comments.user', 'likes']);
+        $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'comments.user', 'likes']);
         $post->is_liked = $post->likes()->where('user_id', auth()->id())->exists();
 
         return response()->json($post);

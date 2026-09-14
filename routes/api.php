@@ -11,6 +11,9 @@ use App\Http\Controllers\Api\PostController;
 use App\Http\Controllers\Api\PostLikeController;
 use App\Http\Controllers\Api\PostCommentController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\GroupController;
+use App\Http\Controllers\Api\GroupMessageController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\Admin\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
@@ -59,6 +62,28 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::match(['put', 'patch', 'post'], '/events/{event}', [EventController::class, 'update']);
         Route::post('/events/{event}/rsvp', [EventController::class, 'rsvp']);
         Route::delete('/events/{event}', [EventController::class, 'destroy']);
+
+        // Groups
+        Route::get('/groups', [GroupController::class, 'index']);
+        Route::post('/groups', [GroupController::class, 'store']);
+        Route::get('/groups/{group}', [GroupController::class, 'show']);
+        Route::match(['put', 'patch', 'post'], '/groups/{group}', [GroupController::class, 'update']);
+        Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
+        Route::post('/groups/{group}/invite', [GroupController::class, 'invite']);
+        Route::post('/groups/{group}/accept-invite', [GroupController::class, 'acceptInvite']);
+        Route::post('/groups/{group}/decline-invite', [GroupController::class, 'declineInvite']);
+        Route::post('/groups/{group}/leave', [GroupController::class, 'leave']);
+        Route::get('/groups/{group}/members', [GroupController::class, 'members']);
+
+        // Group Messages (Chat)
+        Route::get('/groups/{group}/messages', [GroupMessageController::class, 'index']);
+        Route::post('/groups/{group}/messages', [GroupMessageController::class, 'store']);
+
+        // Notifications
+        Route::get('/notifications', [NotificationController::class, 'index']);
+        Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
+        Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 
         // Admin
         Route::middleware('admin')->prefix('admin')->name('admin.')->group(function () {

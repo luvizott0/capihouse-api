@@ -98,6 +98,26 @@ class User extends Authenticatable
         return $this->belongsToMany(Interest::class);
     }
 
+    public function groups()
+    {
+        return $this->belongsToMany(Group::class, 'group_users')
+            ->withPivot(['role', 'status'])
+            ->withTimestamps();
+    }
+
+    public function acceptedGroups()
+    {
+        return $this->belongsToMany(Group::class, 'group_users')
+            ->wherePivot('status', 'accepted')
+            ->withPivot(['role', 'status'])
+            ->withTimestamps();
+    }
+
+    public function appNotifications()
+    {
+        return $this->hasMany(AppNotification::class);
+    }
+
     public function avatar()
     {
         return $this->morphOne(Media::class, 'mediable')->where('collection_name', 'avatar');
