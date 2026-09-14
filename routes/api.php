@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\LogoutController;
+use App\Http\Controllers\Api\Auth\ImpersonateController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\InterestController;
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\Route;
 // Public auth routes
 Route::post('/auth/login', [LoginController::class, 'login']);
 Route::post('/auth/register', [RegisterController::class, 'register']);
+Route::post('/auth/impersonate', [ImpersonateController::class, 'impersonate']);
+Route::get('/auth/dev-users', [ImpersonateController::class, 'devUsers']);
 
 // Authenticated routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -67,6 +70,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::patch('/users/{user}/promote', [UserManagementController::class, 'promote']);
             Route::patch('/users/{user}/demote', [UserManagementController::class, 'demote']);
             Route::delete('/users/{user}', [UserManagementController::class, 'destroy']);
+            Route::post('/users/{user}/impersonate', [ImpersonateController::class, 'impersonateUser']);
         });
     });
 });
