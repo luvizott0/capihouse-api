@@ -55,7 +55,8 @@ class GroupController extends Controller
 
         // Photo upload
         if ($request->hasFile('photo')) {
-            $path = $request->file('photo')->store("groups/{$group->id}", 'public');
+            $disk = config('filesystems.default', 'public');
+            $path = $request->file('photo')->store("groups/{$group->id}", $disk);
             $group->media()->create([
                 'path' => $path,
                 'type' => MediaType::IMAGE,
@@ -107,13 +108,11 @@ class GroupController extends Controller
 
         if ($request->hasFile('photo')) {
             foreach ($group->media as $media) {
-                $rawPath = $media->getRawOriginal('path') ?? $media->path;
-                $relative = preg_replace('/^.*?storage\//', '', $rawPath);
-                Storage::disk('public')->delete($relative);
                 $media->delete();
             }
 
-            $path = $request->file('photo')->store("groups/{$group->id}", 'public');
+            $disk = config('filesystems.default', 'public');
+            $path = $request->file('photo')->store("groups/{$group->id}", $disk);
             $group->media()->create([
                 'path' => $path,
                 'type' => MediaType::IMAGE,
@@ -134,9 +133,7 @@ class GroupController extends Controller
         }
 
         foreach ($group->media as $media) {
-            $rawPath = $media->getRawOriginal('path') ?? $media->path;
-            $relative = preg_replace('/^.*?storage\//', '', $rawPath);
-            Storage::disk('public')->delete($relative);
+            $media->delete();
         }
 
         $group->delete();

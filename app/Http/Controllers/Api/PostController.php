@@ -114,10 +114,11 @@ class PostController extends Controller
 
         // Medias
         if ($request->hasFile('media')) {
+            $disk = config('filesystems.default', 'public');
             foreach ($request->file('media') as $file) {
                 $mime = $file->getMimeType();
                 $type = str_starts_with($mime, 'video/') ? MediaType::VIDEO : MediaType::IMAGE;
-                $path = $file->store("posts/{$post->id}", 'public');
+                $path = $file->store("posts/{$post->id}", $disk);
 
                 $post->media()->create([
                     'path' => $path,
@@ -203,8 +204,6 @@ class PostController extends Controller
 
         // Delete associated media files
         foreach ($post->media as $media) {
-            $relative = str_replace('/storage/', '', $media->path);
-            Storage::disk('public')->delete($relative);
             $media->delete();
         }
 

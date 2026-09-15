@@ -7,6 +7,7 @@ use App\Enums\UserStatuses;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -51,10 +52,17 @@ class User extends Authenticatable
         if (empty($value)) {
             return null;
         }
+        if (str_starts_with($value, 'http://capihouse.bmo/storage/')) {
+            $relative = substr($value, strlen('http://capihouse.bmo/storage/'));
+            $disk = config('filesystems.default', 'public');
+            return Storage::disk($disk)->url($relative);
+        }
         if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
             return $value;
         }
-        return asset('storage/' . ltrim($value, '/'));
+        $disk = config('filesystems.default', 'public');
+        $clean = preg_replace('/^\/?storage\//', '', $value);
+        return Storage::disk($disk)->url(ltrim($clean, '/'));
     }
 
     public function getBannerUrlAttribute(?string $value): ?string
@@ -62,10 +70,17 @@ class User extends Authenticatable
         if (empty($value)) {
             return null;
         }
+        if (str_starts_with($value, 'http://capihouse.bmo/storage/')) {
+            $relative = substr($value, strlen('http://capihouse.bmo/storage/'));
+            $disk = config('filesystems.default', 'public');
+            return Storage::disk($disk)->url($relative);
+        }
         if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
             return $value;
         }
-        return asset('storage/' . ltrim($value, '/'));
+        $disk = config('filesystems.default', 'public');
+        $clean = preg_replace('/^\/?storage\//', '', $value);
+        return Storage::disk($disk)->url(ltrim($clean, '/'));
     }
 
     public function posts()

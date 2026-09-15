@@ -32,13 +32,13 @@ class ProfileController extends Controller
     public function uploadAvatar(UploadAvatarRequest $request)
     {
         $user = auth()->user();
+        $disk = config('filesystems.default', 'public');
         
         if ($user->avatar) {
-            Storage::disk('public')->delete($user->avatar->path);
-            $user->avatar()->delete();
+            $user->avatar->delete();
         }
 
-        $path = $request->file('avatar')->store("avatars/{$user->id}", 'public');
+        $path = $request->file('avatar')->store("avatars/{$user->id}", $disk);
         
         $media = $user->avatar()->create([
             'path' => $path,
@@ -54,13 +54,13 @@ class ProfileController extends Controller
     public function uploadBanner(UploadBannerRequest $request)
     {
         $user = auth()->user();
+        $disk = config('filesystems.default', 'public');
         
         if ($user->banner) {
-            Storage::disk('public')->delete($user->banner->path);
-            $user->banner()->delete();
+            $user->banner->delete();
         }
 
-        $path = $request->file('banner')->store("banners/{$user->id}", 'public');
+        $path = $request->file('banner')->store("banners/{$user->id}", $disk);
         
         $media = $user->banner()->create([
             'path' => $path,

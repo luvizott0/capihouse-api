@@ -29,6 +29,22 @@ class Media extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::deleting(function (Media $media) {
+            $raw = $media->getRawOriginal('path') ?? $media->attributes['path'] ?? null;
+            if ($raw && !str_starts_with($raw, 'http://') && !str_starts_with($raw, 'https://')) {
+                $clean = preg_replace('/^\/?storage\//', '', $raw);
+                $disk = config('filesystems.default', 'public');
+                try {
+                    \Illuminate\Support\Facades\Storage::disk($disk)->delete(ltrim($clean, '/'));
+                } catch (\Throwable $e) {
+                    // Ignore deletion errors on model cleanup
+                }
+            }
+        });
+    }
+
     public function mediable()
     {
         return $this->morphTo();
@@ -43,7 +59,8 @@ class Media extends Model
             return $value;
         }
         $clean = preg_replace('/^\/?storage\//', '', $value);
-        return asset('storage/' . ltrim($clean, '/'));
+        $disk = config('filesystems.default', 'public');
+        return \Illuminate\Support\Facades\Storage::disk($disk)->url(ltrim($clean, '/'));
     }
 
     public function getUrlAttribute(): ?string
@@ -54,5 +71,14 @@ class Media extends Model
     public function getUrl(): string
     {
         return $this->path ?? '';
+    }
+
+    public function getRawPath(): ?string
+    {
+        $raw = $this->getRawOriginal('path') ?? $this->attributes['path'] ?? null;
+        if (empty($raw)) {
+            return null;
+        }
+        return preg_replace('/^\/?storage\//', '', $raw);
     }
 }

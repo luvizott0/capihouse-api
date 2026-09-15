@@ -78,7 +78,8 @@ class EventController extends Controller
 
         // Image
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store("events/{$event->id}", 'public');
+            $disk = config('filesystems.default', 'public');
+            $path = $request->file('image')->store("events/{$event->id}", $disk);
             $event->media()->create([
                 'path' => $path,
                 'type' => MediaType::IMAGE,
@@ -118,13 +119,11 @@ class EventController extends Controller
         // Image replacement if provided
         if ($request->hasFile('image')) {
             foreach ($event->media as $media) {
-                $rawPath = $media->getRawOriginal('path') ?? $media->path;
-                $relative = preg_replace('/^.*?storage\//', '', $rawPath);
-                Storage::disk('public')->delete($relative);
                 $media->delete();
             }
 
-            $path = $request->file('image')->store("events/{$event->id}", 'public');
+            $disk = config('filesystems.default', 'public');
+            $path = $request->file('image')->store("events/{$event->id}", $disk);
             $event->media()->create([
                 'path' => $path,
                 'type' => MediaType::IMAGE,
@@ -176,9 +175,7 @@ class EventController extends Controller
         }
 
         foreach ($event->media as $media) {
-            $rawPath = $media->getRawOriginal('path') ?? $media->path;
-            $relative = preg_replace('/^.*?storage\//', '', $rawPath);
-            Storage::disk('public')->delete($relative);
+            $media->delete();
         }
 
         $event->delete();
