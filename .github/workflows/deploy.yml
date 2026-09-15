@@ -32,6 +32,8 @@ jobs:
           if [ -z "$TARGET_DIR" ]; then
             if [ -n "$CAPIHOUSE_DIR" ]; then
               TARGET_DIR="$CAPIHOUSE_DIR"
+            elif [ -f "$HOME/homelab/capihouse/docker-compose.yml" ]; then
+              TARGET_DIR="$HOME/homelab/capihouse"
             elif [ -f "/opt/capihouse/docker-compose.yml" ]; then
               TARGET_DIR="/opt/capihouse"
             elif [ -f "$HOME/capihouse/docker-compose.yml" ]; then
@@ -54,19 +56,22 @@ jobs:
       - name: Verificar Integridade (Healthcheck)
         run: |
           echo "🩺 Verificando integridade da aplicação..."
+          API_PORT=$(docker port capihouse-api 8000/tcp 2>/dev/null | head -n 1 | awk -F: '{print $NF}' || echo "8000")
+          echo "Porta pública detectada: ${API_PORT:-8000}"
           for i in {1..12}; do
             STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' capihouse-api 2>/dev/null || echo "not_found")
             echo "Tentativa $i/12 - Status do container: $STATUS"
-            if [ "$STATUS" = "healthy" ] || [ "$STATUS" = "running" ]; then
+            if [ "$STATUS" = "healthy" ]; then
+              echo "✅ API reportou status saudável (healthy)!"
+              exit 0
+            fi
+            if [ "$STATUS" = "running" ]; then
               if command -v curl >/dev/null 2>&1; then
-                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/up || echo "000")
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${API_PORT:-8000}/up" || echo "000")
                 if [ "$HTTP_CODE" = "200" ]; then
                   echo "✅ API respondendo com sucesso no endpoint /up (HTTP 200)!"
                   exit 0
                 fi
-              else
-                echo "✅ Contêiner em execução com sucesso!"
-                exit 0
               fi
             fi
             sleep 5
