@@ -88,12 +88,12 @@ Route::middleware('auth:sanctum')->group(function () {
         // Admin
         Route::middleware('admin')->prefix('admin')->name('admin.')->group(function () {
             Route::get('/users', [UserManagementController::class, 'index']);
-            Route::patch('/users/{user}/approve', [UserManagementController::class, 'approve']);
-            Route::patch('/users/{user}/reject', [UserManagementController::class, 'reject']);
-            Route::patch('/users/{user}/ban', [UserManagementController::class, 'ban']);
-            Route::patch('/users/{user}/unban', [UserManagementController::class, 'unban']);
-            Route::patch('/users/{user}/promote', [UserManagementController::class, 'promote']);
-            Route::patch('/users/{user}/demote', [UserManagementController::class, 'demote']);
+            Route::match(['patch', 'post'], '/users/{user}/approve', [UserManagementController::class, 'approve']);
+            Route::match(['patch', 'post'], '/users/{user}/reject', [UserManagementController::class, 'reject']);
+            Route::match(['patch', 'post'], '/users/{user}/ban', [UserManagementController::class, 'ban']);
+            Route::match(['patch', 'post'], '/users/{user}/unban', [UserManagementController::class, 'unban']);
+            Route::match(['patch', 'post'], '/users/{user}/promote', [UserManagementController::class, 'promote']);
+            Route::match(['patch', 'post'], '/users/{user}/demote', [UserManagementController::class, 'demote']);
             Route::delete('/users/{user}', [UserManagementController::class, 'destroy']);
             Route::post('/users/{user}/impersonate', [ImpersonateController::class, 'impersonateUser']);
         });

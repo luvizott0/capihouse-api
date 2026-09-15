@@ -16,11 +16,11 @@ class UserManagementController extends Controller
     {
         $query = User::query();
 
-        if ($request->has('status')) {
+        if ($request->filled('status')) {
             $query->where('status', $request->input('status'));
         }
 
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
@@ -29,7 +29,9 @@ class UserManagementController extends Controller
             });
         }
 
-        $users = $query->paginate(15);
+        $users = $query->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
+            ->latest('id')
+            ->paginate(15);
 
         return UserListResource::collection($users);
     }
