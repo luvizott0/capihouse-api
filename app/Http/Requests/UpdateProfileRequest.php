@@ -22,7 +22,7 @@ class UpdateProfileRequest extends FormRequest
             'theme'                => ['sometimes', 'nullable', 'array'],
             'theme.bg_type'        => ['sometimes', 'nullable', 'in:color,image'],
             'theme.bg_value'       => ['sometimes', 'nullable', 'string', 'max:512'],
-            'theme.bg_size'        => ['sometimes', 'nullable', 'in:cover,contain,auto,100% 100%,100% auto'],
+            'theme.bg_size'        => ['sometimes', 'nullable', 'string', 'max:64'],
             'theme.bg_repeat'      => ['sometimes', 'nullable', 'in:no-repeat,repeat,repeat-x,repeat-y'],
             'theme.bg_position'    => ['sometimes', 'nullable', 'string', 'max:64'],
             'theme.color_primary'  => ['sometimes', 'nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
