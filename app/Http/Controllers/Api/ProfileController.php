@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Requests\UploadAvatarRequest;
 use App\Http\Requests\UploadBannerRequest;
+use App\Http\Requests\UploadThemeBackgroundRequest;
 use App\Http\Resources\MediaResource;
 use App\Http\Resources\ProfileResource;
 use Illuminate\Http\Request;
@@ -85,5 +86,48 @@ class ProfileController extends Controller
         ]);
 
         return response()->json(['message' => 'Senha atualizada com sucesso.'], 200);
+    }
+
+    public function uploadThemeBackground(UploadThemeBackgroundRequest $request)
+    {
+        $user = auth()->user();
+        $disk = config('filesystems.default', 'public');
+
+        // Delete old theme background from storage if it's a stored file
+        $currentTheme = $user->theme ?? [];
+        if (
+            isset($currentTheme['bg_type'], $currentTheme['bg_value']) &&
+            $currentTheme['bg_type'] === 'image' &&
+            str_contains($currentTheme['bg_value'], '/theme-backgrounds/')
+        ) {
+            $relative = preg_replace('/^.*\/storage\//', '', $currentTheme['bg_value']);
+            Storage::disk($disk)->delete(ltrim($relative, '/'));
+        }
+
+        $path = $request->file('background')->store("theme-backgrounds/{$user->id}", $disk);
+        $url  = Storage::disk($disk)->url($path);
+
+        return response()->json(['url' => $url]);
+    }
+
+    public function resetTheme()
+    {
+        $user = auth()->user();
+
+        // Delete stored background image if exists
+        $currentTheme = $user->theme ?? [];
+        if (
+            isset($currentTheme['bg_type'], $currentTheme['bg_value']) &&
+            $currentTheme['bg_type'] === 'image' &&
+            str_contains($currentTheme['bg_value'], '/theme-backgrounds/')
+        ) {
+            $disk     = config('filesystems.default', 'public');
+            $relative = preg_replace('/^.*\/storage\//', '', $currentTheme['bg_value']);
+            Storage::disk($disk)->delete(ltrim($relative, '/'));
+        }
+
+        $user->update(['theme' => null]);
+
+        return new ProfileResource($user->load(['avatar', 'banner', 'interests', 'posts', 'postLikes', 'events']));
     }
 }

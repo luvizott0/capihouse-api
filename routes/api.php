@@ -36,6 +36,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar']);
         Route::post('/profile/banner', [ProfileController::class, 'uploadBanner']);
         Route::put('/profile/password', [ProfileController::class, 'updatePassword']);
+        Route::post('/profile/theme-background', [ProfileController::class, 'uploadThemeBackground']);
+        Route::delete('/profile/theme', [ProfileController::class, 'resetTheme']);
 
         // Users
         Route::get('/users', [UserController::class, 'index']);

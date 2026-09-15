@@ -28,6 +28,7 @@ class User extends Authenticatable
         'instagram',
         'spotify',
         'last_seen_at',
+        'theme',
     ];
 
     protected $hidden = [
@@ -46,6 +47,7 @@ class User extends Authenticatable
             'role'              => UserRoles::class,
             'birth'             => 'date',
             'last_seen_at'      => 'datetime',
+            'theme'             => 'array',
         ];
     }
 

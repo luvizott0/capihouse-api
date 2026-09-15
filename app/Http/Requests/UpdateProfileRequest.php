@@ -14,11 +14,18 @@ class UpdateProfileRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['sometimes', 'string', 'max:255'],
-            'bio' => ['nullable', 'string', 'max:1000'],
-            'birth' => ['nullable', 'date'],
-            'instagram' => ['nullable', 'string', 'max:255'],
-            'spotify' => ['nullable', 'string', 'max:255'],
+            'name'                 => ['sometimes', 'string', 'max:255'],
+            'bio'                  => ['nullable', 'string', 'max:1000'],
+            'birth'                => ['nullable', 'date'],
+            'instagram'            => ['nullable', 'string', 'max:255'],
+            'spotify'              => ['nullable', 'string', 'max:255'],
+            'theme'                => ['sometimes', 'nullable', 'array'],
+            'theme.bg_type'        => ['sometimes', 'nullable', 'in:color,image'],
+            'theme.bg_value'       => ['sometimes', 'nullable', 'string', 'max:512'],
+            'theme.bg_size'        => ['sometimes', 'nullable', 'in:cover,contain,auto,100% 100%,100% auto'],
+            'theme.bg_repeat'      => ['sometimes', 'nullable', 'in:no-repeat,repeat,repeat-x,repeat-y'],
+            'theme.bg_position'    => ['sometimes', 'nullable', 'string', 'max:64'],
+            'theme.color_primary'  => ['sometimes', 'nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
         ];
     }
 }
