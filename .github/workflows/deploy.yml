@@ -1,0 +1,79 @@
+name: Deploy Homelab - API
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - '.editorconfig'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Deploy capihouse-api
+    runs-on: [self-hosted]
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Build da Imagem Docker
+        run: |
+          echo "🔨 Iniciando compilação da imagem Docker do capihouse-api..."
+          docker build \
+            --tag capihouse-api:latest \
+            --tag capihouse-api:${{ github.sha }} \
+            -f Dockerfile .
+
+      - name: Deploy no Docker Compose
+        run: |
+          TARGET_DIR="${{ vars.CAPIHOUSE_DIR }}"
+          if [ -z "$TARGET_DIR" ]; then
+            if [ -n "$CAPIHOUSE_DIR" ]; then
+              TARGET_DIR="$CAPIHOUSE_DIR"
+            elif [ -f "/opt/capihouse/docker-compose.yml" ]; then
+              TARGET_DIR="/opt/capihouse"
+            elif [ -f "$HOME/capihouse/docker-compose.yml" ]; then
+              TARGET_DIR="$HOME/capihouse"
+            elif [ -f "../docker-compose.yml" ]; then
+              TARGET_DIR=".."
+            else
+              TARGET_DIR="."
+            fi
+          fi
+
+          echo "🚀 Atualizando serviço capihouse-api no Docker Compose em: $TARGET_DIR"
+          if [ -f "$TARGET_DIR/docker-compose.yml" ]; then
+            docker compose --project-directory "$TARGET_DIR" -f "$TARGET_DIR/docker-compose.yml" up -d --no-deps capihouse-api
+          else
+            echo "⚠️ docker-compose.yml não encontrado em $TARGET_DIR. Tentando reiniciar contêiner capihouse-api diretamente..."
+            docker restart capihouse-api || echo "Contêiner não estava em execução."
+          fi
+
+      - name: Verificar Integridade (Healthcheck)
+        run: |
+          echo "🩺 Verificando integridade da aplicação..."
+          for i in {1..12}; do
+            STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' capihouse-api 2>/dev/null || echo "not_found")
+            echo "Tentativa $i/12 - Status do container: $STATUS"
+            if [ "$STATUS" = "healthy" ] || [ "$STATUS" = "running" ]; then
+              if command -v curl >/dev/null 2>&1; then
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/up || echo "000")
+                if [ "$HTTP_CODE" = "200" ]; then
+                  echo "✅ API respondendo com sucesso no endpoint /up (HTTP 200)!"
+                  exit 0
+                fi
+              else
+                echo "✅ Contêiner em execução com sucesso!"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+
+      - name: Limpeza de Imagens Antigas (Prune)
+        if: always()
+        run: |
+          echo "🧹 Limpando imagens órfãs ou antigas..."
+          docker image prune -f || true
