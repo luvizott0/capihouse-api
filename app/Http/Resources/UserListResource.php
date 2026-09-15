@@ -4,16 +4,13 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\DB;
 
 class UserListResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $isOnline = DB::table('sessions')
-            ->where('user_id', $this->id)
-            ->where('last_activity', '>=', now()->subMinutes(5)->getTimestamp())
-            ->exists();
+        $isOnline = $this->last_seen_at !== null
+            && $this->last_seen_at->gte(now()->subMinutes(5));
 
         return [
             'id' => $this->id,

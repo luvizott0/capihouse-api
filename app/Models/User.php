@@ -27,6 +27,7 @@ class User extends Authenticatable
         'birth',
         'instagram',
         'spotify',
+        'last_seen_at',
     ];
 
     protected $hidden = [
@@ -40,10 +41,11 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'status' => UserStatuses::class,
-            'role' => UserRoles::class,
-            'birth' => 'date',
+            'password'          => 'hashed',
+            'status'            => UserStatuses::class,
+            'role'              => UserRoles::class,
+            'birth'             => 'date',
+            'last_seen_at'      => 'datetime',
         ];
     }
 

@@ -8,7 +8,6 @@ use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Enums\UserStatuses;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class UserController extends Controller
 {
@@ -41,18 +40,9 @@ class UserController extends Controller
 
     public function online()
     {
-        $onlineUsers = User::whereHas('sessions', function ($query) {
-            $query->where('last_activity', '>=', now()->subMinutes(5)->getTimestamp());
-        })->get();
-        
-        // As a fallback since we might not have 'sessions' relation on User explicitly,
-        // we can query the DB table directly.
-        $onlineUserIds = DB::table('sessions')
-            ->whereNotNull('user_id')
-            ->where('last_activity', '>=', now()->subMinutes(5)->getTimestamp())
-            ->pluck('user_id');
-            
-        $users = User::whereIn('id', $onlineUserIds)->get();
+        $users = User::whereNotNull('last_seen_at')
+            ->where('last_seen_at', '>=', now()->subMinutes(5))
+            ->get();
 
         return UserListResource::collection($users);
     }

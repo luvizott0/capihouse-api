@@ -14,11 +14,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'approved' => \App\Http\Middleware\EnsureUserIsApproved::class,
-            'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
+            'approved'   => \App\Http\Middleware\EnsureUserIsApproved::class,
+            'admin'      => \App\Http\Middleware\EnsureUserIsAdmin::class,
+            'track.seen' => \App\Http\Middleware\UpdateLastSeenAt::class,
         ]);
-        
-        $middleware->statefulApi(); // Usually needed for Sanctum SPA authentication, but we are building an API that might be stateful or stateless. Since the task mentions Sanctum and CORS for localhost:5173, adding statefulApi is standard for SPA.
+
+        $middleware->statefulApi();
+
+        $middleware->appendToGroup('api', [
+            \App\Http\Middleware\UpdateLastSeenAt::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
