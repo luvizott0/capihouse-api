@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AppNotification;
 use App\Models\Post;
 use App\Models\PostComment;
 use Illuminate\Http\Request;
@@ -23,6 +24,25 @@ class PostCommentController extends Controller
         $post->increment('comments_count');
 
         $comment->load('user');
+
+        if ($post->user_id !== auth()->id()) {
+            $commenter = auth()->user();
+            $snippet = mb_strimwidth($comment->content, 0, 80, '...');
+            AppNotification::create([
+                'user_id' => $post->user_id,
+                'type' => 'post_comment',
+                'title' => 'Novo comentário',
+                'content' => "{$commenter->name} comentou na sua publicação: \"{$snippet}\"",
+                'data' => [
+                    'post_id' => $post->id,
+                    'comment_id' => $comment->id,
+                    'commenter_id' => $commenter->id,
+                    'commenter_name' => $commenter->name,
+                    'commenter_username' => $commenter->username,
+                    'commenter_avatar' => $commenter->avatar_url,
+                ],
+            ]);
+        }
 
         return response()->json($comment, 201);
     }

@@ -25,7 +25,7 @@ class UserResource extends JsonResource
             'status'     => $this->status instanceof \BackedEnum ? $this->status->value : (string) $this->status,
             'role'       => $this->role instanceof \BackedEnum ? $this->role->value : (string) $this->role,
             'bio'        => $this->bio,
-            'birth'      => $this->birth,
+            'birth'      => $this->birth?->format('Y-m-d'),
             'instagram'  => $this->instagram,
             'spotify'    => $this->spotify,
             'initials'   => $this->initials(),

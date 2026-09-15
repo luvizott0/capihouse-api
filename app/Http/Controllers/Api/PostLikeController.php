@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AppNotification;
 use App\Models\Post;
 use App\Models\PostLike;
 
@@ -24,6 +25,23 @@ class PostLikeController extends Controller
             ]);
             $post->increment('likes_count');
             $isLiked = true;
+
+            if ($post->user_id !== $userId) {
+                $liker = auth()->user();
+                AppNotification::create([
+                    'user_id' => $post->user_id,
+                    'type' => 'post_like',
+                    'title' => 'Nova curtida',
+                    'content' => "{$liker->name} curtiu sua publicação.",
+                    'data' => [
+                        'post_id' => $post->id,
+                        'liker_id' => $liker->id,
+                        'liker_name' => $liker->name,
+                        'liker_username' => $liker->username,
+                        'liker_avatar' => $liker->avatar_url,
+                    ],
+                ]);
+            }
         }
 
         return response()->json([
