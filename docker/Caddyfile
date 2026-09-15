@@ -1,0 +1,14 @@
+{
+    auto_https off
+    admin off
+    {$CADDY_GLOBAL_OPTIONS}
+    frankenphp {
+        {$FRANKENPHP_CONFIG}
+    }
+}
+
+{$SERVER_NAME::8000} {
+    root * /var/www/html/public
+    encode zstd gzip
+    php_server
+}
