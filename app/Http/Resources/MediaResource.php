@@ -14,7 +14,7 @@ class MediaResource extends JsonResource
             'path' => $this->path,
             'type' => $this->type,
             'collection_name' => $this->collection_name,
-            'url' => $this->getUrl(),
+            'url' => ($this->resource && method_exists($this->resource, 'getUrl')) ? $this->resource->getUrl() : ($this->path ?? ''),
         ];
     }
 }

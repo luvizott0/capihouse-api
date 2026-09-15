@@ -31,8 +31,8 @@ class UserResource extends JsonResource
             'initials' => $this->initials(),
             'is_admin' => $this->isAdmin(),
             'is_online' => $isOnline,
-            'avatar' => new MediaResource($this->whenLoaded('avatar')),
-            'banner' => new MediaResource($this->whenLoaded('banner')),
+            'avatar' => MediaResource::make($this->whenLoaded('avatar')),
+            'banner' => MediaResource::make($this->whenLoaded('banner')),
             'interests' => InterestResource::collection($this->whenLoaded('interests')),
             'created_at' => $this->created_at,
         ];
