@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\MediaType;
+use App\Events\NotificationSent;
 use App\Http\Controllers\Controller;
 use App\Models\AppNotification;
 use App\Models\Group;
@@ -275,7 +276,7 @@ class GroupController extends Controller
                     'status' => 'pending',
                 ]);
 
-                AppNotification::create([
+                $notification = AppNotification::create([
                     'user_id' => $targetId,
                     'type' => 'group_invite',
                     'title' => 'Convite para grupo',
@@ -288,6 +289,16 @@ class GroupController extends Controller
                         'status' => 'pending',
                     ],
                 ]);
+
+                $unreadCount = AppNotification::where('user_id', $targetId)
+                    ->whereNull('read_at')
+                    ->count();
+
+                try {
+                    broadcast(new NotificationSent($notification, $unreadCount));
+                } catch (\Throwable $e) {
+                    report($e);
+                }
             }
         }
     }

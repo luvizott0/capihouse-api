@@ -45,12 +45,12 @@ jobs:
             fi
           fi
 
-          echo "🚀 Atualizando serviço capihouse-api no Docker Compose em: $TARGET_DIR"
+          echo "🚀 Atualizando serviços capihouse-api e capihouse-reverb no Docker Compose em: $TARGET_DIR"
           if [ -f "$TARGET_DIR/docker-compose.yml" ]; then
-            docker compose --project-directory "$TARGET_DIR" -f "$TARGET_DIR/docker-compose.yml" up -d --no-deps capihouse-api
+            docker compose --project-directory "$TARGET_DIR" -f "$TARGET_DIR/docker-compose.yml" up -d --no-deps capihouse-api capihouse-reverb
           else
-            echo "⚠️ docker-compose.yml não encontrado em $TARGET_DIR. Tentando reiniciar contêiner capihouse-api diretamente..."
-            docker restart capihouse-api || echo "Contêiner não estava em execução."
+            echo "⚠️ docker-compose.yml não encontrado em $TARGET_DIR. Tentando reiniciar contêineres diretamente..."
+            docker restart capihouse-api capihouse-reverb || echo "Contêineres não estavam em execução."
           fi
 
       - name: Verificar Integridade (Healthcheck)

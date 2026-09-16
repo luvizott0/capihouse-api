@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\NotificationSent;
+use App\Events\PostLiked;
 use App\Http\Controllers\Controller;
 use App\Models\AppNotification;
 use App\Models\Post;
@@ -28,7 +30,7 @@ class PostLikeController extends Controller
 
             if ($post->user_id !== $userId) {
                 $liker = auth()->user();
-                AppNotification::create([
+                $notification = AppNotification::create([
                     'user_id' => $post->user_id,
                     'type' => 'post_like',
                     'title' => 'Nova curtida',
@@ -41,12 +43,32 @@ class PostLikeController extends Controller
                         'liker_avatar' => $liker->avatar_url,
                     ],
                 ]);
+
+                $unreadCount = AppNotification::where('user_id', $post->user_id)
+                    ->whereNull('read_at')
+                    ->count();
+
+                try {
+                    broadcast(new NotificationSent($notification, $unreadCount));
+                } catch (\Throwable $e) {
+                    report($e);
+                }
             }
+        }
+
+        $freshPost = $post->fresh();
+        $freshLikesCount = max(0, $freshPost->likes_count);
+
+        // Broadcast PostLiked to all users in the channel safely
+        try {
+            broadcast(new PostLiked($post->id, $isLiked, $freshLikesCount, $userId, $post->group_id));
+        } catch (\Throwable $e) {
+            report($e);
         }
 
         return response()->json([
             'is_liked' => $isLiked,
-            'likes_count' => max(0, $post->fresh()->likes_count),
+            'likes_count' => $freshLikesCount,
         ]);
     }
 }

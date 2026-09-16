@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\GroupMessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\Group;
 use App\Models\GroupMessage;
@@ -47,6 +48,15 @@ class GroupMessageController extends Controller
             'content' => $request->input('content'),
         ]);
 
-        return response()->json($message->load('user:id,name,username,avatar_url'), 201);
+        $message->load('user:id,name,username,avatar_url');
+
+        // Broadcast message to group channel safely
+        try {
+            broadcast(new GroupMessageSent($message));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return response()->json($message, 201);
     }
 }

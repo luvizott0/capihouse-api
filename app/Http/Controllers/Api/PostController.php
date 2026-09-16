@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\MediaType;
+use App\Events\PostCreated;
+use App\Events\PostDeleted;
+use App\Events\PostUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Hashtag;
 use App\Models\Post;
@@ -131,6 +134,13 @@ class PostController extends Controller
         $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'comments.user', 'likes']);
         $post->is_liked = false;
 
+        // Broadcast event safely
+        try {
+            broadcast(new PostCreated($post));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return response()->json($post, 201);
     }
 
@@ -193,6 +203,13 @@ class PostController extends Controller
         $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'comments.user', 'likes']);
         $post->is_liked = $post->likes()->where('user_id', auth()->id())->exists();
 
+        // Broadcast event safely
+        try {
+            broadcast(new PostUpdated($post));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return response()->json($post);
     }
 
@@ -202,12 +219,22 @@ class PostController extends Controller
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
+        $postId = $post->id;
+        $groupId = $post->group_id;
+
         // Delete associated media files
         foreach ($post->media as $media) {
             $media->delete();
         }
 
         $post->delete();
+
+        // Broadcast event safely
+        try {
+            broadcast(new PostDeleted($postId, $groupId));
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return response()->json(['message' => 'Post excluído com sucesso.']);
     }
