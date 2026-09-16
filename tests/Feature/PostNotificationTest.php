@@ -137,4 +137,22 @@ class PostNotificationTest extends TestCase
         $res->assertStatus(200);
         $this->assertEquals('1995-05-20', $res->json('data.birth') ?? $res->json('birth'));
     }
+
+    public function test_can_get_single_post()
+    {
+        $author = $this->createApprovedUser(['name' => 'Author']);
+        $viewer = $this->createApprovedUser(['name' => 'Viewer']);
+
+        $post = Post::create([
+            'user_id' => $author->id,
+            'content' => 'Single Post Content',
+        ]);
+
+        $res = $this->actingAs($viewer)->getJson("/api/posts/{$post->id}");
+        $res->assertStatus(200);
+        $this->assertEquals($post->id, $res->json('id'));
+        $this->assertEquals('Single Post Content', $res->json('content'));
+        $this->assertFalse($res->json('is_liked'));
+    }
 }
+

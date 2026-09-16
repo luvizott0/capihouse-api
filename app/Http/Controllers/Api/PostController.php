@@ -94,6 +94,35 @@ class PostController extends Controller
         return response()->json($posts);
     }
 
+    public function show(Post $post)
+    {
+        $userId = auth()->id();
+        $isAdmin = auth()->user()->isAdmin();
+
+        if ($post->group_id) {
+            $isMember = auth()->user()->acceptedGroups()->where('groups.id', $post->group_id)->exists();
+            if (!$isMember && !$isAdmin) {
+                return response()->json(['message' => 'Você não tem permissão para visualizar este post.'], 403);
+            }
+        }
+
+        $post->load([
+            'user',
+            'group:id,name',
+            'media',
+            'feeling',
+            'hashtags',
+            'mentions:id,name,username,avatar_url',
+            'comments.user',
+            'comments.mentions:id,name,username,avatar_url',
+            'likes'
+        ])->loadCount(['likes', 'comments']);
+
+        $post->is_liked = $post->likes->contains('user_id', $userId);
+
+        return response()->json($post);
+    }
+
     public function store(Request $request)
     {
         $request->validate([
