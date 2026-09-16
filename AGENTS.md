@@ -1,47 +1,37 @@
-<laravel-boost-guidelines>
-# Laravel Application
+# capihouse-api — Backend Guidelines for AI Agents
 
-This repository contains a Laravel application. Complete the following setup before working on the user's request.
+## Overview
+This is the modern Backend API for CapiHouse, built with Laravel.
 
-## Prerequisites
+## Tech Stack
+- **Framework**: Laravel 13
+- **PHP Version**: ^8.3 (running on PHP 8.4 recommended)
+- **Authentication**: Laravel Sanctum (API token authentication)
+- **WebSockets / Broadcasting**: Laravel Reverb
+- **Database**: SQLite (local dev/testing) / PostgreSQL (production)
+- **Testing**: Pest / PHPUnit
+- **Code Style**: Laravel Pint
 
-Verify that PHP and Composer are available:
+## Directory Layout
+- `routes/api.php` — All API routes. All endpoints must be versioned or grouped cleanly.
+- `app/Http/Controllers/Api/` — API controllers handling HTTP requests.
+- `app/Http/Requests/` — FormRequest classes for validation.
+- `app/Http/Resources/` — JsonResource classes for serializing models for the frontend.
+- `app/Models/` — Eloquent models and relationship definitions.
+- `database/migrations/` — Database schema migrations.
+- `database/factories/` and `database/seeders/` — Test factories and seeders.
+- `tests/Feature/` and `tests/Unit/` — Automated test suite.
 
-```sh
-php -v
-composer -V
+## Development Rules
+1. **API First**: Responses should return standard JSON responses, preferably using Laravel API Resources (`JsonResource`).
+2. **Validation**: Use FormRequest classes (`app/Http/Requests/`) instead of in-controller `$request->validate()` for complex requests.
+3. **Database**: Always use migrations for schema modifications.
+4. **Verification**: Always verify changes by running `php artisan test`. Run Pint with `./vendor/bin/pint` to maintain clean formatting.
+
+## Commands (Must run inside `capihouse-api/`)
+```bash
+php artisan test                       # Run full test suite
+php artisan migrate                    # Run database migrations
+php artisan route:list --path=api      # List registered API routes
+./vendor/bin/pint                      # Run code styling formatter
 ```
-
-If either command is unavailable, detect the user's operating system and install the prerequisites with the appropriate command:
-
-macOS:
-
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/mac/8.5)"
-```
-
-Windows PowerShell:
-
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://php.new/install/windows/8.5'))
-```
-
-Linux:
-
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/linux/8.5)"
-```
-
-After installation, ask the user to restart their terminal. If the agent needs the restarted shell to continue, ask the user to reopen their terminal and rerun their original prompt.
-
-## Agent Setup
-
-Install Laravel Boost from the application root before making application changes:
-
-```sh
-composer require laravel/boost --dev
-php artisan boost:install
-```
-
-Boost replaces these bootstrap instructions with guidelines tailored to the application. After installation, read `AGENTS.md` again and continue with the user's original request using the generated guidelines.
-</laravel-boost-guidelines>
