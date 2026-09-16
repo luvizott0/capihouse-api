@@ -128,7 +128,7 @@ class PostController extends Controller
         $request->validate([
             'content' => 'nullable|string|max:2000',
             'group_id' => 'nullable|exists:groups,id',
-            'feeling_name' => 'nullable|string|max:10',
+            'feeling_name' => 'nullable|string|max:15',
             'feeling_emoji' => 'nullable|string|max:32',
             'hashtags' => 'nullable|array',
             'hashtags.*' => 'string|max:50',
@@ -157,7 +157,7 @@ class PostController extends Controller
         // Feelings
         if ($request->filled('feeling_name')) {
             $post->feeling()->create([
-                'name' => mb_substr(trim($request->input('feeling_name')), 0, 10),
+                'name' => mb_substr(trim($request->input('feeling_name')), 0, 15),
                 'emoji' => $request->input('feeling_emoji') ?? '😊',
             ]);
         }
@@ -215,7 +215,7 @@ class PostController extends Controller
 
         $request->validate([
             'content' => 'nullable|string|max:2000',
-            'feeling_name' => 'nullable|string|max:10',
+            'feeling_name' => 'nullable|string|max:15',
             'feeling_emoji' => 'nullable|string|max:32',
             'hashtags' => 'nullable|array',
             'hashtags.*' => 'string|max:50',
@@ -231,7 +231,7 @@ class PostController extends Controller
 
         // Feelings
         if ($request->filled('feeling_name')) {
-            $name = mb_substr(trim($request->input('feeling_name')), 0, 10);
+            $name = mb_substr(trim($request->input('feeling_name')), 0, 15);
             $emoji = $request->input('feeling_emoji') ?? '😊';
             if ($post->feeling) {
                 $post->feeling->update([
