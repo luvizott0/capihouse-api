@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Events\CommentCreated;
 use App\Events\CommentDeleted;
+use App\Events\CommentUpdated;
 use App\Events\NotificationSent;
 use App\Http\Controllers\Controller;
 use App\Models\AppNotification;
@@ -60,7 +61,7 @@ class PostCommentController extends Controller
         // Broadcast CommentCreated to all users in the channel safely
         $freshCommentsCount = $post->fresh()->comments_count;
         try {
-            broadcast(new CommentCreated($comment, $freshCommentsCount, $post->group_id));
+            broadcast(new CommentCreated($comment, $freshCommentsCount, $post->group_id))->toOthers();
         } catch (\Throwable $e) {
             report($e);
         }
@@ -68,9 +69,39 @@ class PostCommentController extends Controller
         return response()->json($comment, 201);
     }
 
-    public function destroy(PostComment $comment)
+    public function update(Request $request, PostComment $comment)
     {
         if ($comment->user_id !== auth()->id() && !auth()->user()->isAdmin()) {
+            return response()->json(['message' => 'Não autorizado.'], 403);
+        }
+
+        $request->validate([
+            'content' => 'required|string|max:500',
+        ]);
+
+        $comment->update([
+            'content' => $request->input('content'),
+        ]);
+
+        $comment->load('user');
+
+        $post = $comment->post;
+        $groupId = $post?->group_id;
+
+        // Broadcast CommentUpdated safely
+        try {
+            broadcast(new CommentUpdated($comment, $groupId))->toOthers();
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return response()->json($comment);
+    }
+
+    public function destroy(PostComment $comment)
+    {
+        $isPostAuthor = $comment->post && $comment->post->user_id === auth()->id();
+        if ($comment->user_id !== auth()->id() && !$isPostAuthor && !auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
@@ -89,7 +120,7 @@ class PostCommentController extends Controller
 
         // Broadcast CommentDeleted to all users in the channel safely
         try {
-            broadcast(new CommentDeleted($commentId, $postId, $freshCommentsCount, $groupId));
+            broadcast(new CommentDeleted($commentId, $postId, $freshCommentsCount, $groupId))->toOthers();
         } catch (\Throwable $e) {
             report($e);
         }
