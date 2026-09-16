@@ -41,8 +41,9 @@ RUN cp -r database /var/www/html/database_src
 RUN composer dump-autoload --optimize --no-dev && \
     php artisan package:discover --ansi
 
-# Copiar configuração do servidor FrankenPHP / Caddy
+# Copiar configuração do servidor FrankenPHP / Caddy e PHP ini
 COPY docker/Caddyfile /etc/caddy/Caddyfile
+COPY docker/php.ini /usr/local/etc/php/conf.d/uploads.ini
 
 # Copiar e configurar permissões do script de entrypoint
 COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

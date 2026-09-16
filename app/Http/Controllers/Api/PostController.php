@@ -125,6 +125,14 @@ class PostController extends Controller
 
     public function store(Request $request)
     {
+        // Verificação defensiva: se a requisição tinha payload mas o PHP descartou $_POST e $_FILES (estouro de post_max_size)
+        $contentLength = (int) ($request->server('CONTENT_LENGTH') ?? 0);
+        if ($contentLength > 0 && empty($request->all()) && empty($request->allFiles())) {
+            return response()->json([
+                'message' => 'O tamanho total dos arquivos enviados ultrapassou o limite máximo aceito pelo servidor. Reduza o tamanho ou a quantidade das imagens.',
+            ], 413);
+        }
+
         $request->validate([
             'content' => 'nullable|string|max:2000',
             'group_id' => 'nullable|exists:groups,id',
@@ -134,6 +142,13 @@ class PostController extends Controller
             'hashtags.*' => 'string|max:50',
             'media' => 'nullable|array|max:5',
             'media.*' => 'file|mimes:jpg,jpeg,png,gif,webp,mp4,mov|max:20480',
+        ], [
+            'content.max' => 'O texto da publicação pode ter no máximo 2000 caracteres.',
+            'feeling_name.max' => 'O sentimento pode ter no máximo 15 caracteres.',
+            'media.max' => 'Você pode anexar no máximo 5 arquivos de mídia.',
+            'media.*.file' => 'O arquivo enviado é inválido.',
+            'media.*.mimes' => 'Formato de mídia não suportado. Utilize imagens (JPG, PNG, GIF, WEBP) ou vídeos (MP4, MOV).',
+            'media.*.max' => 'Cada arquivo de mídia pode ter no máximo 20MB.',
         ]);
 
         if (!$request->filled('content') && !$request->hasFile('media')) {
