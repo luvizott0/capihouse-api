@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 use App\Models\Group;
 use Illuminate\Support\Facades\Broadcast;
