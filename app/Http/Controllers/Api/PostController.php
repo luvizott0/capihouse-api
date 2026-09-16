@@ -9,6 +9,7 @@ use App\Events\PostUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Hashtag;
 use App\Models\Post;
+use App\Services\MentionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -25,6 +26,7 @@ class PostController extends Controller
             'media',
             'feeling',
             'hashtags',
+            'mentions:id,name,username,avatar_url',
             'comments.user',
             'likes'
         ])
@@ -72,7 +74,13 @@ class PostController extends Controller
         }
 
         if ($request->filled('user_id')) {
-            $query->where('user_id', $request->input('user_id'));
+            $targetUserId = $request->input('user_id');
+            $query->where(function ($q) use ($targetUserId) {
+                $q->where('user_id', $targetUserId)
+                  ->orWhereHas('mentions', function ($mq) use ($targetUserId) {
+                      $mq->where('users.id', $targetUserId);
+                  });
+            });
         }
 
         $posts = $query->latest()->paginate(15);
@@ -154,7 +162,10 @@ class PostController extends Controller
             }
         }
 
-        $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'comments.user', 'likes']);
+        // Mentions
+        MentionService::syncPostMentions($post, auth()->user());
+
+        $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'mentions:id,name,username,avatar_url', 'comments.user', 'likes']);
         $post->is_liked = false;
 
         // Broadcast event safely
@@ -223,7 +234,10 @@ class PostController extends Controller
             $post->hashtags()->sync($hashtagIds);
         }
 
-        $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'comments.user', 'likes']);
+        // Mentions
+        MentionService::syncPostMentions($post, auth()->user());
+
+        $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'mentions:id,name,username,avatar_url', 'comments.user', 'likes']);
         $post->is_liked = $post->likes()->where('user_id', auth()->id())->exists();
 
         // Broadcast event safely

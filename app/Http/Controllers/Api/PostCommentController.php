@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AppNotification;
 use App\Models\Post;
 use App\Models\PostComment;
+use App\Services\MentionService;
 use Illuminate\Http\Request;
 
 class PostCommentController extends Controller
@@ -27,9 +28,11 @@ class PostCommentController extends Controller
 
         $post->increment('comments_count');
 
-        $comment->load('user');
+        $comment->load(['user', 'mentions:id,name,username,avatar_url']);
 
-        if ($post->user_id !== auth()->id()) {
+        $mentionedIds = MentionService::syncCommentMentions($comment, auth()->user(), $post);
+
+        if ($post->user_id !== auth()->id() && !in_array($post->user_id, $mentionedIds)) {
             $commenter = auth()->user();
             $snippet = mb_strimwidth($comment->content, 0, 80, '...');
             $notification = AppNotification::create([
@@ -83,9 +86,13 @@ class PostCommentController extends Controller
             'content' => $request->input('content'),
         ]);
 
-        $comment->load('user');
-
         $post = $comment->post;
+        if ($post) {
+            MentionService::syncCommentMentions($comment, auth()->user(), $post);
+        }
+
+        $comment->load(['user', 'mentions:id,name,username,avatar_url']);
+
         $groupId = $post?->group_id;
 
         // Broadcast CommentUpdated safely

@@ -102,6 +102,16 @@ class User extends Authenticatable
         return $this->hasMany(PostComment::class);
     }
 
+    public function mentionedPosts()
+    {
+        return $this->belongsToMany(Post::class, 'post_mentions')->withTimestamps();
+    }
+
+    public function mentionedComments()
+    {
+        return $this->belongsToMany(PostComment::class, 'post_comment_mentions')->withTimestamps();
+    }
+
     public function events()
     {
         return $this->hasMany(Event::class);

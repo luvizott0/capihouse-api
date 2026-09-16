@@ -37,6 +37,11 @@ class Post extends Model
         return $this->belongsToMany(Hashtag::class);
     }
 
+    public function mentions()
+    {
+        return $this->belongsToMany(User::class, 'post_mentions')->withTimestamps();
+    }
+
     public function comments()
     {
         return $this->hasMany(PostComment::class);
