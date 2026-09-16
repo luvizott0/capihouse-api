@@ -28,6 +28,26 @@ class EventController extends Controller
             });
         }
 
+        if ($request->filled('q') || $request->filled('search')) {
+            $search = $request->input('q', $request->input('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%")
+                  ->orWhereHas('owner', function ($oq) use ($search) {
+                      $oq->where('name', 'like', "%{$search}%")
+                         ->orWhere('username', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($request->filled('date')) {
+            $query->whereDate('date', $request->input('date'));
+        }
+
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->input('user_id'));
+        }
+
         $events = $query->orderBy('date', 'asc')
             ->paginate(15);
 

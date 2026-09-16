@@ -51,6 +51,29 @@ class PostController extends Controller
                 }
             });
         }
+        
+        if ($request->filled('q') || $request->filled('search')) {
+            $search = $request->input('q', $request->input('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('content', 'like', "%{$search}%")
+                  ->orWhereHas('user', function ($uq) use ($search) {
+                      $uq->where('name', 'like', "%{$search}%")
+                         ->orWhere('username', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('hashtags', function ($hq) use ($search) {
+                      $cleanTag = ltrim($search, '#');
+                      $hq->where('name', 'like', "%{$cleanTag}%");
+                  });
+            });
+        }
+
+        if ($request->filled('date')) {
+            $query->whereDate('created_at', $request->input('date'));
+        }
+
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->input('user_id'));
+        }
 
         $posts = $query->latest()->paginate(15);
 

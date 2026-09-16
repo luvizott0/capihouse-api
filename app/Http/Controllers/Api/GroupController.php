@@ -27,6 +27,22 @@ class GroupController extends Controller
             });
         }
 
+        if ($request->filled('q') || $request->filled('search')) {
+            $search = $request->input('q', $request->input('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('date')) {
+            $query->whereDate('created_at', $request->input('date'));
+        }
+
+        if ($request->filled('user_id')) {
+            $query->where('creator_id', $request->input('user_id'));
+        }
+
         $groups = $query->latest()->paginate(20);
 
         return response()->json($groups);
