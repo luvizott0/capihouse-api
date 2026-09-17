@@ -9,6 +9,7 @@ use App\Events\PostUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Hashtag;
 use App\Models\Post;
+use App\Services\ImageOptimizerService;
 use App\Services\MentionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -28,7 +29,7 @@ class PostController extends Controller
             'hashtags',
             'mentions:id,name,username,avatar_url',
             'comments.user',
-            'likes'
+            'likes' => fn($q) => $q->where('user_id', $userId),
         ])
         ->withCount(['likes', 'comments']);
 
@@ -86,8 +87,8 @@ class PostController extends Controller
         $posts = $query->latest()->paginate(15);
 
         // Transform collection to append is_liked by current user
-        $posts->getCollection()->transform(function ($post) use ($userId) {
-            $post->is_liked = $post->likes->contains('user_id', $userId);
+        $posts->getCollection()->transform(function ($post) {
+            $post->is_liked = $post->likes->isNotEmpty();
             return $post;
         });
 
@@ -115,10 +116,10 @@ class PostController extends Controller
             'mentions:id,name,username,avatar_url',
             'comments.user',
             'comments.mentions:id,name,username,avatar_url',
-            'likes'
+            'likes' => fn($q) => $q->where('user_id', $userId),
         ])->loadCount(['likes', 'comments']);
 
-        $post->is_liked = $post->likes->contains('user_id', $userId);
+        $post->is_liked = $post->likes->isNotEmpty();
 
         return response()->json($post);
     }
@@ -196,7 +197,7 @@ class PostController extends Controller
             foreach ($request->file('media') as $file) {
                 $mime = $file->getMimeType();
                 $type = str_starts_with($mime, 'video/') ? MediaType::VIDEO : MediaType::IMAGE;
-                $path = $file->store("posts/{$post->id}", $disk);
+                $path = ImageOptimizerService::storeOptimized($file, "posts/{$post->id}", $disk);
 
                 $post->media()->create([
                     'path' => $path,
