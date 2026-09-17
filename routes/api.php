@@ -16,6 +16,10 @@ use App\Http\Controllers\Api\GroupMessageController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\Admin\UserManagementController;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
+
+// Broadcasting authentication for private channels with Sanctum Bearer token
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 // Public auth routes
 Route::post('/auth/login', [LoginController::class, 'login']);
