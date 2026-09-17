@@ -12,7 +12,6 @@ use App\Models\Post;
 use App\Services\ImageOptimizerService;
 use App\Services\MentionService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class PostController extends Controller
 {
@@ -29,15 +28,18 @@ class PostController extends Controller
             'hashtags',
             'mentions:id,name,username,avatar_url',
             'comments.user',
-            'likes' => fn($q) => $q->where('user_id', $userId),
+            'comments.mentions:id,name,username,avatar_url',
+            'comments.parent.user:id,name,username',
+            'comments.likes' => fn ($q) => $q->where('user_id', $userId),
+            'likes' => fn ($q) => $q->where('user_id', $userId),
         ])
-        ->withCount(['likes', 'comments']);
+            ->withCount(['likes', 'comments']);
 
         if ($request->filled('group_id')) {
             $groupId = $request->input('group_id');
             // Check if user is accepted member of the group
             $isMember = auth()->user()->acceptedGroups()->where('groups.id', $groupId)->exists();
-            if (!$isMember && !$isAdmin) {
+            if (! $isMember && ! $isAdmin) {
                 return response()->json(['message' => 'Você não tem permissão para visualizar posts deste grupo.'], 403);
             }
             $query->where('group_id', $groupId);
@@ -54,19 +56,19 @@ class PostController extends Controller
                 }
             });
         }
-        
+
         if ($request->filled('q') || $request->filled('search')) {
             $search = $request->input('q', $request->input('search'));
             $query->where(function ($q) use ($search) {
                 $q->where('content', 'like', "%{$search}%")
-                  ->orWhereHas('user', function ($uq) use ($search) {
-                      $uq->where('name', 'like', "%{$search}%")
-                         ->orWhere('username', 'like', "%{$search}%");
-                  })
-                  ->orWhereHas('hashtags', function ($hq) use ($search) {
-                      $cleanTag = ltrim($search, '#');
-                      $hq->where('name', 'like', "%{$cleanTag}%");
-                  });
+                    ->orWhereHas('user', function ($uq) use ($search) {
+                        $uq->where('name', 'like', "%{$search}%")
+                            ->orWhere('username', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('hashtags', function ($hq) use ($search) {
+                        $cleanTag = ltrim($search, '#');
+                        $hq->where('name', 'like', "%{$cleanTag}%");
+                    });
             });
         }
 
@@ -78,9 +80,9 @@ class PostController extends Controller
             $targetUserId = $request->input('user_id');
             $query->where(function ($q) use ($targetUserId) {
                 $q->where('user_id', $targetUserId)
-                  ->orWhereHas('mentions', function ($mq) use ($targetUserId) {
-                      $mq->where('users.id', $targetUserId);
-                  });
+                    ->orWhereHas('mentions', function ($mq) use ($targetUserId) {
+                        $mq->where('users.id', $targetUserId);
+                    });
             });
         }
 
@@ -89,6 +91,15 @@ class PostController extends Controller
         // Transform collection to append is_liked by current user
         $posts->getCollection()->transform(function ($post) {
             $post->is_liked = $post->likes->isNotEmpty();
+            if ($post->comments) {
+                $post->comments->transform(function ($comment) {
+                    $comment->is_liked = $comment->likes ? $comment->likes->isNotEmpty() : false;
+                    unset($comment->likes);
+
+                    return $comment;
+                });
+            }
+
             return $post;
         });
 
@@ -102,7 +113,7 @@ class PostController extends Controller
 
         if ($post->group_id) {
             $isMember = auth()->user()->acceptedGroups()->where('groups.id', $post->group_id)->exists();
-            if (!$isMember && !$isAdmin) {
+            if (! $isMember && ! $isAdmin) {
                 return response()->json(['message' => 'Você não tem permissão para visualizar este post.'], 403);
             }
         }
@@ -116,10 +127,20 @@ class PostController extends Controller
             'mentions:id,name,username,avatar_url',
             'comments.user',
             'comments.mentions:id,name,username,avatar_url',
-            'likes' => fn($q) => $q->where('user_id', $userId),
+            'comments.parent.user:id,name,username',
+            'comments.likes' => fn ($q) => $q->where('user_id', $userId),
+            'likes' => fn ($q) => $q->where('user_id', $userId),
         ])->loadCount(['likes', 'comments']);
 
         $post->is_liked = $post->likes->isNotEmpty();
+        if ($post->comments) {
+            $post->comments->transform(function ($comment) {
+                $comment->is_liked = $comment->likes ? $comment->likes->isNotEmpty() : false;
+                unset($comment->likes);
+
+                return $comment;
+            });
+        }
 
         return response()->json($post);
     }
@@ -152,14 +173,14 @@ class PostController extends Controller
             'media.*.max' => 'Cada arquivo de mídia pode ter no máximo 20MB.',
         ]);
 
-        if (!$request->filled('content') && !$request->hasFile('media')) {
+        if (! $request->filled('content') && ! $request->hasFile('media')) {
             return response()->json(['message' => 'O post precisa ter texto ou mídia.'], 422);
         }
 
         $groupId = $request->input('group_id');
         if ($groupId) {
             $isMember = auth()->user()->acceptedGroups()->where('groups.id', $groupId)->exists();
-            if (!$isMember && !auth()->user()->isAdmin()) {
+            if (! $isMember && ! auth()->user()->isAdmin()) {
                 return response()->json(['message' => 'Você precisa ser membro do grupo para publicar nele.'], 403);
             }
         }
@@ -225,7 +246,7 @@ class PostController extends Controller
 
     public function update(Request $request, Post $post)
     {
-        if ($post->user_id !== auth()->id() && !auth()->user()->isAdmin()) {
+        if ($post->user_id !== auth()->id() && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
@@ -237,7 +258,7 @@ class PostController extends Controller
             'hashtags.*' => 'string|max:50',
         ]);
 
-        if (!$request->filled('content') && !$post->media()->exists()) {
+        if (! $request->filled('content') && ! $post->media()->exists()) {
             return response()->json(['message' => 'O post precisa ter texto ou mídia.'], 422);
         }
 
@@ -297,7 +318,7 @@ class PostController extends Controller
 
     public function destroy(Post $post)
     {
-        if ($post->user_id !== auth()->id() && !auth()->user()->isAdmin()) {
+        if ($post->user_id !== auth()->id() && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 

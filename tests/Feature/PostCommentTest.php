@@ -6,6 +6,7 @@ use App\Enums\UserRoles;
 use App\Enums\UserStatuses;
 use App\Events\CommentCreated;
 use App\Events\CommentDeleted;
+use App\Events\CommentLiked;
 use App\Events\CommentUpdated;
 use App\Models\Post;
 use App\Models\PostComment;
@@ -232,5 +233,171 @@ class PostCommentTest extends TestCase
         $this->assertDatabaseHas('post_comments', [
             'id' => $comment->id,
         ]);
+    }
+
+    public function test_user_can_reply_to_comment()
+    {
+        Event::fake([CommentCreated::class]);
+
+        $postAuthor = $this->createApprovedUser(['name' => 'Post Author']);
+        $parentAuthor = $this->createApprovedUser(['name' => 'Parent Author']);
+        $replier = $this->createApprovedUser(['name' => 'Replier']);
+
+        $post = Post::create([
+            'user_id' => $postAuthor->id,
+            'content' => 'Publicação com comentário',
+        ]);
+
+        $parentComment = PostComment::create([
+            'post_id' => $post->id,
+            'user_id' => $parentAuthor->id,
+            'content' => 'Comentário original para responder',
+        ]);
+
+        $res = $this->actingAs($replier)->postJson("/api/posts/{$post->id}/comments", [
+            'content' => 'Esta é uma resposta!',
+            'parent_id' => $parentComment->id,
+        ]);
+
+        $res->assertStatus(201);
+        $res->assertJsonFragment([
+            'content' => 'Esta é uma resposta!',
+            'parent_id' => $parentComment->id,
+        ]);
+        $res->assertJsonPath('parent.user.name', 'Parent Author');
+
+        $this->assertDatabaseHas('post_comments', [
+            'post_id' => $post->id,
+            'parent_id' => $parentComment->id,
+            'user_id' => $replier->id,
+            'content' => 'Esta é uma resposta!',
+        ]);
+
+        // Check comment_reply notification was created for parentAuthor
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $parentAuthor->id,
+            'type' => 'comment_reply',
+        ]);
+
+        // Check post_comment notification was created for postAuthor
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $postAuthor->id,
+            'type' => 'post_comment',
+        ]);
+    }
+
+    public function test_cannot_reply_with_parent_id_from_different_post()
+    {
+        $user = $this->createApprovedUser();
+        $post1 = Post::create(['user_id' => $user->id, 'content' => 'Post 1']);
+        $post2 = Post::create(['user_id' => $user->id, 'content' => 'Post 2']);
+
+        $commentPost1 = PostComment::create([
+            'post_id' => $post1->id,
+            'user_id' => $user->id,
+            'content' => 'Comentário no post 1',
+        ]);
+
+        $res = $this->actingAs($user)->postJson("/api/posts/{$post2->id}/comments", [
+            'content' => 'Tentativa cruzada',
+            'parent_id' => $commentPost1->id,
+        ]);
+
+        $res->assertStatus(422);
+    }
+
+    public function test_user_can_like_and_unlike_comment()
+    {
+        Event::fake([CommentLiked::class]);
+
+        $commentAuthor = $this->createApprovedUser(['name' => 'Comment Author']);
+        $liker = $this->createApprovedUser(['name' => 'Liker User']);
+
+        $post = Post::create([
+            'user_id' => $commentAuthor->id,
+            'content' => 'Post de teste',
+        ]);
+
+        $comment = PostComment::create([
+            'post_id' => $post->id,
+            'user_id' => $commentAuthor->id,
+            'content' => 'Comentário a ser curtido',
+        ]);
+
+        // 1. Like
+        $res = $this->actingAs($liker)->postJson("/api/comments/{$comment->id}/like");
+        $res->assertStatus(200);
+        $res->assertJson([
+            'comment_id' => $comment->id,
+            'is_liked' => true,
+            'likes_count' => 1,
+        ]);
+
+        $this->assertEquals(1, $comment->fresh()->likes_count);
+        $this->assertDatabaseHas('post_comment_likes', [
+            'comment_id' => $comment->id,
+            'user_id' => $liker->id,
+        ]);
+
+        // Notification for comment author
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $commentAuthor->id,
+            'type' => 'comment_like',
+        ]);
+
+        Event::assertDispatched(CommentLiked::class);
+
+        // 2. Unlike
+        $resUnlike = $this->actingAs($liker)->postJson("/api/comments/{$comment->id}/like");
+        $resUnlike->assertStatus(200);
+        $resUnlike->assertJson([
+            'comment_id' => $comment->id,
+            'is_liked' => false,
+            'likes_count' => 0,
+        ]);
+
+        $this->assertEquals(0, $comment->fresh()->likes_count);
+        $this->assertDatabaseMissing('post_comment_likes', [
+            'comment_id' => $comment->id,
+            'user_id' => $liker->id,
+        ]);
+    }
+
+    public function test_post_show_returns_comment_is_liked_and_parent()
+    {
+        $user = $this->createApprovedUser();
+        $post = Post::create(['user_id' => $user->id, 'content' => 'Post']);
+
+        $parent = PostComment::create([
+            'post_id' => $post->id,
+            'user_id' => $user->id,
+            'content' => 'Comentário pai',
+        ]);
+
+        $child = PostComment::create([
+            'post_id' => $post->id,
+            'parent_id' => $parent->id,
+            'user_id' => $user->id,
+            'content' => 'Comentário filho',
+        ]);
+
+        // Like child
+        $this->actingAs($user)->postJson("/api/comments/{$child->id}/like");
+
+        $res = $this->actingAs($user)->getJson("/api/posts/{$post->id}");
+        $res->assertStatus(200);
+
+        $comments = $res->json('comments');
+        $this->assertCount(2, $comments);
+
+        $childInRes = collect($comments)->firstWhere('id', $child->id);
+        $this->assertTrue($childInRes['is_liked']);
+        $this->assertEquals(1, $childInRes['likes_count']);
+        $this->assertEquals($parent->id, $childInRes['parent_id']);
+        $this->assertEquals('Comentário pai', $childInRes['parent']['content']);
+
+        $parentInRes = collect($comments)->firstWhere('id', $parent->id);
+        $this->assertFalse($parentInRes['is_liked']);
+        $this->assertEquals(0, $parentInRes['likes_count']);
     }
 }

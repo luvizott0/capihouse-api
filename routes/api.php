@@ -1,22 +1,23 @@
 <?php
 
-use App\Http\Controllers\Api\Auth\LoginController;
-use App\Http\Controllers\Api\Auth\RegisterController;
-use App\Http\Controllers\Api\Auth\LogoutController;
+use App\Http\Controllers\Api\Admin\UserManagementController;
 use App\Http\Controllers\Api\Auth\ImpersonateController;
-use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\ProfileController;
-use App\Http\Controllers\Api\InterestController;
-use App\Http\Controllers\Api\PostController;
-use App\Http\Controllers\Api\PostLikeController;
-use App\Http\Controllers\Api\PostCommentController;
+use App\Http\Controllers\Api\Auth\LoginController;
+use App\Http\Controllers\Api\Auth\LogoutController;
+use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\GroupMessageController;
+use App\Http\Controllers\Api\InterestController;
 use App\Http\Controllers\Api\NotificationController;
-use App\Http\Controllers\Api\Admin\UserManagementController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\PostCommentController;
+use App\Http\Controllers\Api\PostCommentLikeController;
+use App\Http\Controllers\Api\PostController;
+use App\Http\Controllers\Api\PostLikeController;
+use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Route;
 
 // Broadcasting authentication for private channels with Sanctum Bearer token
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
@@ -62,6 +63,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/posts/{post}/comments', [PostCommentController::class, 'store']);
         Route::put('/comments/{comment}', [PostCommentController::class, 'update']);
         Route::delete('/comments/{comment}', [PostCommentController::class, 'destroy']);
+        Route::post('/comments/{comment}/like', [PostCommentLikeController::class, 'toggle']);
 
         // Events
         Route::get('/events', [EventController::class, 'index']);
