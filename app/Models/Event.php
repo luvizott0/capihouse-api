@@ -29,7 +29,8 @@ class Event extends Model
 
     public function getImageUrlAttribute(): ?string
     {
-        $media = $this->media->first(fn($m) => $m->collection_name === 'event_image') ?? $this->media->first();
+        $media = $this->media->first(fn ($m) => $m->collection_name === 'event_image') ?? $this->media->first();
+
         return $media ? $media->path : null;
     }
 
@@ -48,9 +49,15 @@ class Event extends Model
         return $this->morphMany(Media::class, 'mediable');
     }
 
+    public function posts()
+    {
+        return $this->hasMany(Post::class);
+    }
+
     public function getImage(): ?string
     {
         $media = $this->media()->where('collection_name', 'event_image')->first();
+
         return $media ? $media->getUrl() : null;
     }
 

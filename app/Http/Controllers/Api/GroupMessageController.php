@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Events\GroupMessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\Group;
-use App\Models\GroupMessage;
 use Illuminate\Http\Request;
 
 class GroupMessageController extends Controller
@@ -15,7 +14,7 @@ class GroupMessageController extends Controller
         $userId = auth()->id();
         $isMember = $group->members()->where('users.id', $userId)->wherePivot('status', 'accepted')->exists();
 
-        if (!$isMember && !auth()->user()->isAdmin()) {
+        if (! $isMember && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Você precisa ser membro do grupo para ver o chat.'], 403);
         }
 
@@ -35,7 +34,7 @@ class GroupMessageController extends Controller
         $userId = auth()->id();
         $isMember = $group->members()->where('users.id', $userId)->wherePivot('status', 'accepted')->exists();
 
-        if (!$isMember && !auth()->user()->isAdmin()) {
+        if (! $isMember && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Você precisa ser membro do grupo para enviar mensagens.'], 403);
         }
 

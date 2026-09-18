@@ -155,4 +155,3 @@ class PostNotificationTest extends TestCase
         $this->assertFalse($res->json('is_liked'));
     }
 }
-

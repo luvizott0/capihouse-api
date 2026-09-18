@@ -7,6 +7,7 @@ use App\Events\PostCreated;
 use App\Events\PostDeleted;
 use App\Events\PostUpdated;
 use App\Http\Controllers\Controller;
+use App\Models\Event;
 use App\Models\Hashtag;
 use App\Models\Post;
 use App\Services\ImageOptimizerService;
@@ -23,6 +24,7 @@ class PostController extends Controller
         $query = Post::with([
             'user',
             'group:id,name',
+            'event:id,name',
             'media',
             'feeling',
             'hashtags',
@@ -35,7 +37,18 @@ class PostController extends Controller
         ])
             ->withCount(['likes', 'comments']);
 
-        if ($request->filled('group_id')) {
+        if ($request->filled('event_id')) {
+            $eventId = $request->input('event_id');
+            $event = Event::find($eventId);
+            if (! $event) {
+                return response()->json(['message' => 'Evento não encontrado.'], 404);
+            }
+            $isInvitedOrOwner = $event->user_id === $userId || $event->guests()->where('users.id', $userId)->exists();
+            if (! $isInvitedOrOwner && ! $isAdmin) {
+                return response()->json(['message' => 'Você não tem permissão para visualizar posts deste evento.'], 403);
+            }
+            $query->where('event_id', $eventId);
+        } elseif ($request->filled('group_id')) {
             $groupId = $request->input('group_id');
             // Check if user is accepted member of the group
             $isMember = auth()->user()->acceptedGroups()->where('groups.id', $groupId)->exists();
@@ -43,8 +56,10 @@ class PostController extends Controller
                 return response()->json(['message' => 'Você não tem permissão para visualizar posts deste grupo.'], 403);
             }
             $query->where('group_id', $groupId);
+            $query->whereNull('event_id');
         } else {
-            // General feed: public posts + posts of groups user is an accepted member of
+            // General feed: public posts + posts of groups user is an accepted member of (never event posts)
+            $query->whereNull('event_id');
             $query->where(function ($q) use ($userId, $isAdmin) {
                 $q->whereNull('group_id');
                 if ($isAdmin) {
@@ -118,9 +133,18 @@ class PostController extends Controller
             }
         }
 
+        if ($post->event_id) {
+            $event = $post->event;
+            $isInvitedOrOwner = $event && ($event->user_id === $userId || $event->guests()->where('users.id', $userId)->exists());
+            if (! $isInvitedOrOwner && ! $isAdmin) {
+                return response()->json(['message' => 'Você não tem permissão para visualizar este post.'], 403);
+            }
+        }
+
         $post->load([
             'user',
             'group:id,name',
+            'event:id,name',
             'media',
             'feeling',
             'hashtags',
@@ -158,6 +182,7 @@ class PostController extends Controller
         $request->validate([
             'content' => 'nullable|string|max:2000',
             'group_id' => 'nullable|exists:groups,id',
+            'event_id' => 'nullable|exists:events,id',
             'feeling_name' => 'nullable|string|max:15',
             'feeling_emoji' => 'nullable|string|max:32',
             'hashtags' => 'nullable|array',
@@ -185,9 +210,19 @@ class PostController extends Controller
             }
         }
 
+        $eventId = $request->input('event_id');
+        if ($eventId) {
+            $event = Event::find($eventId);
+            $isInvitedOrOwner = $event && ($event->user_id === auth()->id() || $event->guests()->where('users.id', auth()->id())->exists());
+            if (! $isInvitedOrOwner && ! auth()->user()->isAdmin()) {
+                return response()->json(['message' => 'Você precisa ser convidado ou organizador do evento para publicar nele.'], 403);
+            }
+        }
+
         $post = Post::create([
             'user_id' => auth()->id(),
             'group_id' => $groupId,
+            'event_id' => $eventId,
             'content' => $request->input('content'),
         ]);
 
@@ -231,7 +266,7 @@ class PostController extends Controller
         // Mentions
         MentionService::syncPostMentions($post, auth()->user());
 
-        $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'mentions:id,name,username,avatar_url', 'comments.user', 'likes']);
+        $post->load(['user', 'group:id,name', 'event:id,name', 'media', 'feeling', 'hashtags', 'mentions:id,name,username,avatar_url', 'comments.user', 'likes']);
         $post->is_liked = false;
 
         // Broadcast event safely
@@ -303,7 +338,7 @@ class PostController extends Controller
         // Mentions
         MentionService::syncPostMentions($post, auth()->user());
 
-        $post->load(['user', 'group:id,name', 'media', 'feeling', 'hashtags', 'mentions:id,name,username,avatar_url', 'comments.user', 'likes']);
+        $post->load(['user', 'group:id,name', 'event:id,name', 'media', 'feeling', 'hashtags', 'mentions:id,name,username,avatar_url', 'comments.user', 'likes']);
         $post->is_liked = $post->likes()->where('user_id', auth()->id())->exists();
 
         // Broadcast event safely
@@ -318,12 +353,18 @@ class PostController extends Controller
 
     public function destroy(Post $post)
     {
-        if ($post->user_id !== auth()->id() && ! auth()->user()->isAdmin()) {
+        $canDelete = $post->user_id === auth()->id()
+            || auth()->user()->isAdmin()
+            || ($post->group_id && $post->group?->creator_id === auth()->id())
+            || ($post->event_id && $post->event?->user_id === auth()->id());
+
+        if (! $canDelete) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
         $postId = $post->id;
         $groupId = $post->group_id;
+        $eventId = $post->event_id;
 
         // Delete associated media files
         foreach ($post->media as $media) {
@@ -334,7 +375,7 @@ class PostController extends Controller
 
         // Broadcast event safely
         try {
-            broadcast(new PostDeleted($postId, $groupId));
+            broadcast(new PostDeleted($postId, $groupId, $eventId));
         } catch (\Throwable $e) {
             report($e);
         }

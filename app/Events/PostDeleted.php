@@ -16,13 +16,18 @@ class PostDeleted implements ShouldBroadcastNow
     public function __construct(
         public readonly int $postId,
         public readonly ?int $groupId = null,
+        public readonly ?int $eventId = null,
     ) {}
 
     public function broadcastOn(): Channel
     {
         if ($this->groupId) {
-            return new PrivateChannel('group.' . $this->groupId);
+            return new PrivateChannel('group.'.$this->groupId);
         }
+        if ($this->eventId) {
+            return new PrivateChannel('event.'.$this->eventId);
+        }
+
         return new Channel('posts');
     }
 

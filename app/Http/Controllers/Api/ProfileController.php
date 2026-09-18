@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\MediaType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Requests\UploadAvatarRequest;
@@ -12,13 +13,13 @@ use App\Http\Resources\ProfileResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
-use App\Enums\MediaType;
 
 class ProfileController extends Controller
 {
     public function show()
     {
         $user = auth()->user()->load(['avatar', 'banner', 'interests', 'posts', 'postLikes', 'events']);
+
         return new ProfileResource($user);
     }
 
@@ -34,13 +35,13 @@ class ProfileController extends Controller
     {
         $user = auth()->user();
         $disk = config('filesystems.default', 'public');
-        
+
         if ($user->avatar) {
             $user->avatar->delete();
         }
 
         $path = $request->file('avatar')->store("avatars/{$user->id}", $disk);
-        
+
         $media = $user->avatar()->create([
             'path' => $path,
             'type' => MediaType::IMAGE,
@@ -56,13 +57,13 @@ class ProfileController extends Controller
     {
         $user = auth()->user();
         $disk = config('filesystems.default', 'public');
-        
+
         if ($user->banner) {
             $user->banner->delete();
         }
 
         $path = $request->file('banner')->store("banners/{$user->id}", $disk);
-        
+
         $media = $user->banner()->create([
             'path' => $path,
             'type' => MediaType::IMAGE,
@@ -105,7 +106,7 @@ class ProfileController extends Controller
         }
 
         $path = $request->file('background')->store("theme-backgrounds/{$user->id}", $disk);
-        $url  = Storage::disk($disk)->url($path);
+        $url = Storage::disk($disk)->url($path);
 
         return response()->json(['url' => $url]);
     }
@@ -121,7 +122,7 @@ class ProfileController extends Controller
             $currentTheme['bg_type'] === 'image' &&
             str_contains($currentTheme['bg_value'], '/theme-backgrounds/')
         ) {
-            $disk     = config('filesystems.default', 'public');
+            $disk = config('filesystems.default', 'public');
             $relative = preg_replace('/^.*\/storage\//', '', $currentTheme['bg_value']);
             Storage::disk($disk)->delete(ltrim($relative, '/'));
         }

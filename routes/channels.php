@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Event;
 use App\Models\Group;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -19,9 +20,26 @@ Broadcast::channel('group.{groupId}', function ($user, $groupId) {
     if ($user->isAdmin()) {
         return true;
     }
+
     return Group::find($groupId)
         ?->members()
         ->where('users.id', $user->id)
         ->wherePivot('status', 'accepted')
         ->exists() ?? false;
+});
+
+/**
+ * Canal privado de evento — organizador, convidados ou admin
+ * Usado para posts de eventos, likes e comentários exclusivos.
+ */
+Broadcast::channel('event.{eventId}', function ($user, $eventId) {
+    if ($user->isAdmin()) {
+        return true;
+    }
+    $event = Event::find($eventId);
+    if (! $event) {
+        return false;
+    }
+
+    return $event->user_id === $user->id || $event->guests()->where('users.id', $user->id)->exists();
 });

@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Http\Middleware\EnsureUserIsApproved;
+use App\Http\Middleware\UpdateLastSeenAt;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,15 +18,15 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'approved'   => \App\Http\Middleware\EnsureUserIsApproved::class,
-            'admin'      => \App\Http\Middleware\EnsureUserIsAdmin::class,
-            'track.seen' => \App\Http\Middleware\UpdateLastSeenAt::class,
+            'approved' => EnsureUserIsApproved::class,
+            'admin' => EnsureUserIsAdmin::class,
+            'track.seen' => UpdateLastSeenAt::class,
         ]);
 
         $middleware->statefulApi();
 
         $middleware->appendToGroup('api', [
-            \App\Http\Middleware\UpdateLastSeenAt::class,
+            UpdateLastSeenAt::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

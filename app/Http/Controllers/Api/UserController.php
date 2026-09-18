@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\UserStatuses;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserListResource;
 use App\Http\Resources\UserResource;
 use App\Models\User;
-use App\Enums\UserStatuses;
 use Illuminate\Http\Request;
 
 class UserController extends Controller
@@ -18,7 +18,7 @@ class UserController extends Controller
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('username', 'like', "%{$search}%");
+                    ->orWhere('username', 'like', "%{$search}%");
             });
         }
 
@@ -26,15 +26,18 @@ class UserController extends Controller
 
         return UserListResource::collection($users);
     }
+
     public function me()
     {
         $user = auth()->user()->load(['avatar', 'banner', 'interests']);
+
         return new UserResource($user);
     }
 
     public function show(User $user)
     {
         $user->load(['avatar', 'banner', 'interests']);
+
         return new UserResource($user);
     }
 

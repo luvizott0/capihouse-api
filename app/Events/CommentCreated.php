@@ -18,13 +18,18 @@ class CommentCreated implements ShouldBroadcastNow
         public readonly PostComment $comment,
         public readonly int $commentsCount,
         public readonly ?int $groupId = null,
+        public readonly ?int $eventId = null,
     ) {}
 
     public function broadcastOn(): Channel
     {
         if ($this->groupId) {
-            return new PrivateChannel('group.' . $this->groupId);
+            return new PrivateChannel('group.'.$this->groupId);
         }
+        if ($this->eventId) {
+            return new PrivateChannel('event.'.$this->eventId);
+        }
+
         return new Channel('posts');
     }
 
@@ -36,8 +41,8 @@ class CommentCreated implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
-            'post_id'        => $this->comment->post_id,
-            'comment'        => $this->comment->toArray(),
+            'post_id' => $this->comment->post_id,
+            'comment' => $this->comment->toArray(),
             'comments_count' => $this->commentsCount,
         ];
     }

@@ -21,8 +21,12 @@ class PostCreated implements ShouldBroadcastNow
     public function broadcastOn(): Channel
     {
         if ($this->post->group_id) {
-            return new PrivateChannel('group.' . $this->post->group_id);
+            return new PrivateChannel('group.'.$this->post->group_id);
         }
+        if ($this->post->event_id) {
+            return new PrivateChannel('event.'.$this->post->event_id);
+        }
+
         return new Channel('posts');
     }
 

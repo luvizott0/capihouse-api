@@ -42,12 +42,12 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'password'          => 'hashed',
-            'status'            => UserStatuses::class,
-            'role'              => UserRoles::class,
-            'birth'             => 'date',
-            'last_seen_at'      => 'datetime',
-            'theme'             => 'array',
+            'password' => 'hashed',
+            'status' => UserStatuses::class,
+            'role' => UserRoles::class,
+            'birth' => 'date',
+            'last_seen_at' => 'datetime',
+            'theme' => 'array',
         ];
     }
 
@@ -62,17 +62,20 @@ class User extends Authenticatable
         if (str_contains($value, '/capihouse-media/')) {
             $relative = preg_replace('/^.*\/capihouse-media\//', '', $value);
             $disk = config('filesystems.default', 'public');
+
             return Storage::disk($disk)->url($relative);
         }
         if (str_contains($value, '/storage/')) {
             $relative = preg_replace('/^.*\/storage\//', '', $value);
             $disk = config('filesystems.default', 'public');
+
             return Storage::disk($disk)->url($relative);
         }
         if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
             return $value;
         }
         $disk = config('filesystems.default', 'public');
+
         return Storage::disk($disk)->url(ltrim($value, '/'));
     }
 
@@ -87,17 +90,20 @@ class User extends Authenticatable
         if (str_contains($value, '/capihouse-media/')) {
             $relative = preg_replace('/^.*\/capihouse-media\//', '', $value);
             $disk = config('filesystems.default', 'public');
+
             return Storage::disk($disk)->url($relative);
         }
         if (str_contains($value, '/storage/')) {
             $relative = preg_replace('/^.*\/storage\//', '', $value);
             $disk = config('filesystems.default', 'public');
+
             return Storage::disk($disk)->url($relative);
         }
         if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
             return $value;
         }
         $disk = config('filesystems.default', 'public');
+
         return Storage::disk($disk)->url(ltrim($value, '/'));
     }
 
@@ -175,8 +181,9 @@ class User extends Authenticatable
     {
         $words = explode(' ', $this->name);
         if (count($words) >= 2) {
-            return mb_strtoupper(mb_substr($words[0], 0, 1) . mb_substr($words[1], 0, 1));
+            return mb_strtoupper(mb_substr($words[0], 0, 1).mb_substr($words[1], 0, 1));
         }
+
         return mb_strtoupper(mb_substr($this->name, 0, 2));
     }
 

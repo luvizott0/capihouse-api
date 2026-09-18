@@ -12,6 +12,7 @@ class Post extends Model
     protected $fillable = [
         'user_id',
         'group_id',
+        'event_id',
         'content',
         'likes_count',
         'comments_count',
@@ -25,6 +26,11 @@ class Post extends Model
     public function group()
     {
         return $this->belongsTo(Group::class);
+    }
+
+    public function event()
+    {
+        return $this->belongsTo(Event::class);
     }
 
     public function likes()
@@ -69,6 +75,6 @@ class Post extends Model
 
     public function getMood(): ?string
     {
-        return $this->feeling ? $this->feeling->emoji . ' ' . $this->feeling->name : null;
+        return $this->feeling ? $this->feeling->emoji.' '.$this->feeling->name : null;
     }
 }

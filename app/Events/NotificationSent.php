@@ -21,7 +21,7 @@ class NotificationSent implements ShouldBroadcastNow
 
     public function broadcastOn(): Channel
     {
-        return new PrivateChannel('App.Models.User.' . $this->notification->user_id);
+        return new PrivateChannel('App.Models.User.'.$this->notification->user_id);
     }
 
     public function broadcastAs(): string

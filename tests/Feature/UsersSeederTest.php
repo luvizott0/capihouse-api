@@ -15,7 +15,7 @@ class UsersSeederTest extends TestCase
     {
         $this->app->detectEnvironment(fn () => 'production');
 
-        (new UsersSeeder())->run();
+        (new UsersSeeder)->run();
 
         $this->assertEquals(1, User::count());
         $user = User::first();
@@ -29,7 +29,7 @@ class UsersSeederTest extends TestCase
     {
         $this->app->detectEnvironment(fn () => 'local');
 
-        (new UsersSeeder())->run();
+        (new UsersSeeder)->run();
 
         // Capivara Rogéria + 10 usuários locais de teste = 11
         $this->assertEquals(11, User::count());

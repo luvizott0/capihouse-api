@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AppNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class NotificationController extends Controller
 {
@@ -17,7 +18,7 @@ class NotificationController extends Controller
             ->paginate(30);
 
         // Enhance group_invite data with current membership status
-        $memberGroupStatuses = \Illuminate\Support\Facades\DB::table('group_users')
+        $memberGroupStatuses = DB::table('group_users')
             ->where('user_id', $user->id)
             ->pluck('status', 'group_id')
             ->toArray();
@@ -33,6 +34,7 @@ class NotificationController extends Controller
                 }
                 $notification->data = $data;
             }
+
             return $notification;
         });
 
@@ -55,7 +57,7 @@ class NotificationController extends Controller
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
-        if (!$notification->read_at) {
+        if (! $notification->read_at) {
             $notification->update(['read_at' => now()]);
         }
 

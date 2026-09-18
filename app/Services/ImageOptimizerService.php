@@ -12,11 +12,9 @@ class ImageOptimizerService
      * Otimiza e salva uma imagem no storage, convertendo para WebP e limitando a 1600px.
      * Se for vídeo ou GIF, salva diretamente sem reprocessar.
      *
-     * @param UploadedFile $file
-     * @param string $folder Diretório de destino no storage (ex: "posts/1")
-     * @param string|null $disk
-     * @param int $maxDimension Dimensão máxima em pixels (padrão 1600)
-     * @param int $quality Qualidade da compressão WebP (0-100, padrão 82)
+     * @param  string  $folder  Diretório de destino no storage (ex: "posts/1")
+     * @param  int  $maxDimension  Dimensão máxima em pixels (padrão 1600)
+     * @param  int  $quality  Qualidade da compressão WebP (0-100, padrão 82)
      * @return string Caminho relativo no storage
      */
     public static function storeOptimized(
@@ -35,7 +33,7 @@ class ImageOptimizerService
         }
 
         // Se a extensão GD não estiver disponível, fallback para salvamento padrão
-        if (!extension_loaded('gd') || !function_exists('imagewebp')) {
+        if (! extension_loaded('gd') || ! function_exists('imagewebp')) {
             return $file->store($folder, $disk);
         }
 
@@ -46,7 +44,7 @@ class ImageOptimizerService
             }
 
             $sourceImage = @imagecreatefromstring($content);
-            if (!$sourceImage) {
+            if (! $sourceImage) {
                 return $file->store($folder, $disk);
             }
 
@@ -97,14 +95,15 @@ class ImageOptimizerService
             }
 
             // Gera nome de arquivo com extensão .webp
-            $filename = Str::random(40) . '.webp';
-            $finalPath = trim($folder, '/') . '/' . $filename;
+            $filename = Str::random(40).'.webp';
+            $finalPath = trim($folder, '/').'/'.$filename;
 
             Storage::disk($disk)->put($finalPath, $webpData);
 
             return $finalPath;
         } catch (\Throwable $e) {
             report($e);
+
             return $file->store($folder, $disk);
         }
     }

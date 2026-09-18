@@ -29,8 +29,9 @@ class OptimizeMediaCommand extends Command
      */
     public function handle()
     {
-        if (!extension_loaded('gd') || !function_exists('imagewebp')) {
+        if (! extension_loaded('gd') || ! function_exists('imagewebp')) {
             $this->error('Extensão GD com suporte a WebP não está disponível no PHP.');
+
             return Command::FAILURE;
         }
 
@@ -45,6 +46,7 @@ class OptimizeMediaCommand extends Command
 
         if ($medias->isEmpty()) {
             $this->info('Nenhuma imagem pendente de otimização encontrada.');
+
             return Command::SUCCESS;
         }
 
@@ -55,15 +57,17 @@ class OptimizeMediaCommand extends Command
 
         foreach ($medias as $media) {
             $rawPath = $media->getRawOriginal('path') ?? $media->attributes['path'] ?? null;
-            if (!$rawPath) {
+            if (! $rawPath) {
                 $bar->advance();
+
                 continue;
             }
 
             $cleanPath = ltrim(preg_replace('/^\/?storage\//', '', $rawPath), '/');
 
-            if (!Storage::disk($disk)->exists($cleanPath)) {
+            if (! Storage::disk($disk)->exists($cleanPath)) {
                 $bar->advance();
+
                 continue;
             }
 
@@ -71,8 +75,9 @@ class OptimizeMediaCommand extends Command
             $content = Storage::disk($disk)->get($cleanPath);
 
             $sourceImage = @imagecreatefromstring($content);
-            if (!$sourceImage) {
+            if (! $sourceImage) {
                 $bar->advance();
+
                 continue;
             }
 
@@ -114,10 +119,10 @@ class OptimizeMediaCommand extends Command
             imagedestroy($sourceImage);
             imagedestroy($targetImage);
 
-            if ($webpData !== false && !empty($webpData)) {
+            if ($webpData !== false && ! empty($webpData)) {
                 $folder = dirname($cleanPath);
-                $newFileName = Str::random(40) . '.webp';
-                $newPath = ($folder === '.' ? '' : $folder . '/') . $newFileName;
+                $newFileName = Str::random(40).'.webp';
+                $newPath = ($folder === '.' ? '' : $folder.'/').$newFileName;
 
                 Storage::disk($disk)->put($newPath, $webpData);
                 $newSize = strlen($webpData);

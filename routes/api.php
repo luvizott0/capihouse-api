@@ -69,8 +69,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/events', [EventController::class, 'index']);
         Route::get('/events/upcoming', [EventController::class, 'upcoming']);
         Route::post('/events', [EventController::class, 'store']);
+        Route::get('/events/{event}', [EventController::class, 'show']);
         Route::match(['put', 'patch', 'post'], '/events/{event}', [EventController::class, 'update']);
         Route::post('/events/{event}/rsvp', [EventController::class, 'rsvp']);
+        Route::post('/events/{event}/invite', [EventController::class, 'inviteGuests']);
         Route::delete('/events/{event}', [EventController::class, 'destroy']);
 
         // Groups

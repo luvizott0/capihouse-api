@@ -60,7 +60,8 @@ class Group extends Model
 
     public function getImageUrlAttribute(): ?string
     {
-        $media = $this->media->first(fn($m) => $m->collection_name === 'group_photo') ?? $this->media->first();
+        $media = $this->media->first(fn ($m) => $m->collection_name === 'group_photo') ?? $this->media->first();
+
         return $media ? $media->path : null;
     }
 
@@ -69,13 +70,16 @@ class Group extends Model
         if ($this->relationLoaded('acceptedMembers')) {
             return $this->acceptedMembers->count();
         }
+
         return $this->acceptedMembers()->count();
     }
 
     public function getIsMemberAttribute(): bool
     {
         $userId = auth()->id();
-        if (!$userId) return false;
+        if (! $userId) {
+            return false;
+        }
 
         if ($this->relationLoaded('members')) {
             return $this->members->contains(function ($user) use ($userId) {
@@ -92,28 +96,36 @@ class Group extends Model
     public function getMembershipStatusAttribute(): ?string
     {
         $userId = auth()->id();
-        if (!$userId) return null;
+        if (! $userId) {
+            return null;
+        }
 
         if ($this->relationLoaded('members')) {
             $user = $this->members->firstWhere('id', $userId);
+
             return $user ? $user->pivot->status : null;
         }
 
         $record = $this->members()->where('users.id', $userId)->first();
+
         return $record ? $record->pivot->status : null;
     }
 
     public function getMyRoleAttribute(): ?string
     {
         $userId = auth()->id();
-        if (!$userId) return null;
+        if (! $userId) {
+            return null;
+        }
 
         if ($this->relationLoaded('members')) {
             $user = $this->members->firstWhere('id', $userId);
+
             return $user ? $user->pivot->role : null;
         }
 
         $record = $this->members()->where('users.id', $userId)->first();
+
         return $record ? $record->pivot->role : null;
     }
 }

@@ -19,13 +19,18 @@ class PostLiked implements ShouldBroadcastNow
         public readonly int $likesCount,
         public readonly int $userId,
         public readonly ?int $groupId = null,
+        public readonly ?int $eventId = null,
     ) {}
 
     public function broadcastOn(): Channel
     {
         if ($this->groupId) {
-            return new PrivateChannel('group.' . $this->groupId);
+            return new PrivateChannel('group.'.$this->groupId);
         }
+        if ($this->eventId) {
+            return new PrivateChannel('event.'.$this->eventId);
+        }
+
         return new Channel('posts');
     }
 
@@ -37,10 +42,10 @@ class PostLiked implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
-            'post_id'     => $this->postId,
-            'is_liked'    => $this->isLiked,
+            'post_id' => $this->postId,
+            'is_liked' => $this->isLiked,
             'likes_count' => $this->likesCount,
-            'user_id'     => $this->userId,
+            'user_id' => $this->userId,
         ];
     }
 }

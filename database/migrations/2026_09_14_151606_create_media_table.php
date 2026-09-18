@@ -16,7 +16,7 @@ return new class extends Migration
             $table->unsignedBigInteger('mediable_id');
             $table->string('mediable_type');
             $table->timestamps();
-            
+
             $table->index(['mediable_type', 'mediable_id']);
         });
     }

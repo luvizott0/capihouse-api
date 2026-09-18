@@ -9,7 +9,6 @@ use App\Models\AppNotification;
 use App\Models\Group;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class GroupController extends Controller
 {
@@ -20,10 +19,10 @@ class GroupController extends Controller
         $query = Group::with(['creator', 'media']);
 
         // Groups are only by invite/membership
-        if (!$isAdmin) {
+        if (! $isAdmin) {
             $query->whereHas('members', function ($q) use ($userId) {
                 $q->where('users.id', $userId)
-                  ->where('group_users.status', 'accepted');
+                    ->where('group_users.status', 'accepted');
             });
         }
 
@@ -31,7 +30,7 @@ class GroupController extends Controller
             $search = $request->input('q', $request->input('search'));
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
@@ -94,7 +93,7 @@ class GroupController extends Controller
         $userId = auth()->id();
         $isMemberOrInvited = $group->members()->where('users.id', $userId)->exists();
 
-        if (!$isMemberOrInvited && !auth()->user()->isAdmin()) {
+        if (! $isMemberOrInvited && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Grupo disponível apenas por convite.'], 403);
         }
 
@@ -108,20 +107,27 @@ class GroupController extends Controller
             $group->members()->where('users.id', $userId)->wherePivot('role', 'owner')->exists() ||
             auth()->user()->isAdmin();
 
-        if (!$isOwnerOrAdmin) {
+        if (! $isOwnerOrAdmin) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string|max:5000',
             'photo' => 'nullable|image|max:10240',
         ]);
 
-        $group->update([
-            'name' => $request->input('name'),
-            'description' => $request->input('description'),
-        ]);
+        $updateData = [];
+        if ($request->has('name')) {
+            $updateData['name'] = $request->input('name');
+        }
+        if ($request->has('description')) {
+            $updateData['description'] = $request->input('description');
+        }
+
+        if (! empty($updateData)) {
+            $group->update($updateData);
+        }
 
         if ($request->hasFile('photo')) {
             foreach ($group->media as $media) {
@@ -145,7 +151,7 @@ class GroupController extends Controller
         $userId = auth()->id();
         $canDelete = $group->creator_id === $userId || auth()->user()->isAdmin();
 
-        if (!$canDelete) {
+        if (! $canDelete) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
@@ -163,7 +169,7 @@ class GroupController extends Controller
         $userId = auth()->id();
         $isMember = $group->members()->where('users.id', $userId)->wherePivot('status', 'accepted')->exists();
 
-        if (!$isMember && !auth()->user()->isAdmin()) {
+        if (! $isMember && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Apenas membros podem convidar outros usuários.'], 403);
         }
 
@@ -182,7 +188,7 @@ class GroupController extends Controller
         $userId = auth()->id();
         $memberRecord = $group->members()->where('users.id', $userId)->first();
 
-        if (!$memberRecord) {
+        if (! $memberRecord) {
             return response()->json(['message' => 'Você não possui convite para este grupo.'], 404);
         }
 
@@ -246,7 +252,7 @@ class GroupController extends Controller
         $userId = auth()->id();
         $memberRecord = $group->members()->where('users.id', $userId)->first();
 
-        if (!$memberRecord) {
+        if (! $memberRecord) {
             return response()->json(['message' => 'Você não é membro deste grupo.'], 400);
         }
 
@@ -268,7 +274,7 @@ class GroupController extends Controller
         $userId = auth()->id();
         $isMember = $group->members()->where('users.id', $userId)->wherePivot('status', 'accepted')->exists();
 
-        if (!$isMember && !auth()->user()->isAdmin()) {
+        if (! $isMember && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
@@ -283,10 +289,12 @@ class GroupController extends Controller
     {
         $sender = auth()->user();
         foreach ($userIds as $targetId) {
-            if ($targetId == $sender->id) continue;
+            if ($targetId == $sender->id) {
+                continue;
+            }
 
             $alreadyMember = $group->members()->where('users.id', $targetId)->exists();
-            if (!$alreadyMember) {
+            if (! $alreadyMember) {
                 $group->members()->attach($targetId, [
                     'role' => 'member',
                     'status' => 'pending',

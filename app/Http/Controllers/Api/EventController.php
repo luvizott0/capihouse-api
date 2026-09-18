@@ -3,11 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\MediaType;
+use App\Events\NotificationSent;
 use App\Http\Controllers\Controller;
+use App\Models\AppNotification;
 use App\Models\Event;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class EventController extends Controller
 {
@@ -19,12 +20,12 @@ class EventController extends Controller
         $query = Event::with(['owner', 'guests', 'media'])
             ->withCount('guests');
 
-        if (!$isAdmin) {
+        if (! $isAdmin) {
             $query->where(function ($q) use ($userId) {
                 $q->where('user_id', $userId)
-                  ->orWhereHas('guests', function ($g) use ($userId) {
-                      $g->where('users.id', $userId);
-                  });
+                    ->orWhereHas('guests', function ($g) use ($userId) {
+                        $g->where('users.id', $userId);
+                    });
             });
         }
 
@@ -32,11 +33,11 @@ class EventController extends Controller
             $search = $request->input('q', $request->input('search'));
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhereHas('owner', function ($oq) use ($search) {
-                      $oq->where('name', 'like', "%{$search}%")
-                         ->orWhere('username', 'like', "%{$search}%");
-                  });
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('owner', function ($oq) use ($search) {
+                        $oq->where('name', 'like', "%{$search}%")
+                            ->orWhere('username', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -54,6 +55,39 @@ class EventController extends Controller
         return response()->json($events);
     }
 
+    public function show(Event $event)
+    {
+        $userId = auth()->id();
+        $isAdmin = auth()->user()->isAdmin();
+
+        $isInvitedOrOwner = $event->user_id === $userId || $event->guests()->where('users.id', $userId)->exists();
+        if (! $isAdmin && ! $isInvitedOrOwner) {
+            return response()->json(['message' => 'Você não tem permissão para visualizar este evento.'], 403);
+        }
+
+        return response()->json($event->load(['owner', 'guests', 'media'])->loadCount('guests'));
+    }
+
+    public function inviteGuests(Request $request, Event $event)
+    {
+        if ($event->user_id !== auth()->id() && ! auth()->user()->isAdmin()) {
+            return response()->json(['message' => 'Não autorizado.'], 403);
+        }
+
+        $request->validate([
+            'guests' => 'required|array|min:1',
+            'guests.*' => 'exists:users,id',
+        ]);
+
+        $newGuestIds = $request->input('guests');
+        $event->guests()->syncWithoutDetaching($newGuestIds);
+
+        return response()->json([
+            'message' => 'Convidados adicionados com sucesso.',
+            'event' => $event->fresh()->load(['owner', 'guests', 'media'])->loadCount('guests'),
+        ]);
+    }
+
     public function upcoming()
     {
         $userId = auth()->id();
@@ -62,12 +96,12 @@ class EventController extends Controller
         $query = Event::with(['owner', 'media'])
             ->where('date', '>=', now()->startOfDay());
 
-        if (!$isAdmin) {
+        if (! $isAdmin) {
             $query->where(function ($q) use ($userId) {
                 $q->where('user_id', $userId)
-                  ->orWhereHas('guests', function ($g) use ($userId) {
-                      $g->where('users.id', $userId);
-                  });
+                    ->orWhereHas('guests', function ($g) use ($userId) {
+                        $g->where('users.id', $userId);
+                    });
             });
         }
 
@@ -117,24 +151,33 @@ class EventController extends Controller
 
     public function update(Request $request, Event $event)
     {
-        if ($event->user_id !== auth()->id() && !auth()->user()->isAdmin()) {
+        if ($event->user_id !== auth()->id() && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
         $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'required|string|max:5000',
-            'date' => 'required|date',
+            'name' => 'sometimes|required|string|max:255',
+            'description' => 'sometimes|required|string|max:5000',
+            'date' => 'sometimes|required|date',
             'image' => 'nullable|image|max:10240',
             'guests' => 'nullable|array',
             'guests.*' => 'exists:users,id',
         ]);
 
-        $event->update([
-            'name' => $request->input('name'),
-            'description' => $request->input('description'),
-            'date' => $request->input('date'),
-        ]);
+        $updateData = [];
+        if ($request->has('name')) {
+            $updateData['name'] = $request->input('name');
+        }
+        if ($request->has('description')) {
+            $updateData['description'] = $request->input('description');
+        }
+        if ($request->has('date')) {
+            $updateData['date'] = $request->input('date');
+        }
+
+        if (! empty($updateData)) {
+            $event->update($updateData);
+        }
 
         // Image replacement if provided
         if ($request->hasFile('image')) {
@@ -171,26 +214,55 @@ class EventController extends Controller
             return response()->json(['message' => 'O organizador do evento tem presença garantida.'], 200);
         }
 
-        // Only invited guests or admins can RSVP
-        $isInvited = $event->guests()->where('users.id', $userId)->exists();
-        if (!$isInvited && !auth()->user()->isAdmin()) {
-            return response()->json(['message' => 'Você não foi convidado para este evento.'], 403);
-        }
-
         $request->validate([
             'status' => 'required|in:confirmed,declined,invited',
         ]);
 
+        $status = $request->input('status');
+
         $event->guests()->syncWithoutDetaching([
-            $userId => ['status' => $request->input('status')],
+            $userId => ['status' => $status],
         ]);
 
-        return response()->json(['message' => 'Presença atualizada com sucesso.']);
+        // Dispara notificação ao organizador do evento
+        $user = auth()->user();
+        $statusText = $status === 'confirmed' ? 'confirmou presença no' : 'informou que não vai ao';
+
+        $notification = AppNotification::create([
+            'user_id' => $event->user_id,
+            'type' => 'event_rsvp',
+            'title' => 'Confirmação de Presença',
+            'content' => "{$user->name} {$statusText} seu evento \"{$event->name}\".",
+            'data' => [
+                'event_id' => $event->id,
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'user_username' => $user->username,
+                'user_avatar' => $user->avatar_url,
+                'status' => $status,
+            ],
+        ]);
+
+        $unreadCount = AppNotification::where('user_id', $event->user_id)
+            ->whereNull('read_at')
+            ->count();
+
+        try {
+            broadcast(new NotificationSent($notification, $unreadCount));
+        } catch (\Throwable $e) {
+            // broadcast fallback
+        }
+
+        return response()->json([
+            'message' => 'Presença atualizada com sucesso.',
+            'event' => $event->fresh()->load(['owner', 'guests', 'media']),
+            'status' => $status,
+        ]);
     }
 
     public function destroy(Event $event)
     {
-        if ($event->user_id !== auth()->id() && !auth()->user()->isAdmin()) {
+        if ($event->user_id !== auth()->id() && ! auth()->user()->isAdmin()) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 

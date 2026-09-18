@@ -23,8 +23,9 @@ class CommentDeleted implements ShouldBroadcastNow
     public function broadcastOn(): Channel
     {
         if ($this->groupId) {
-            return new PrivateChannel('group.' . $this->groupId);
+            return new PrivateChannel('group.'.$this->groupId);
         }
+
         return new Channel('posts');
     }
 
@@ -36,8 +37,8 @@ class CommentDeleted implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
-            'comment_id'     => $this->commentId,
-            'post_id'        => $this->postId,
+            'comment_id' => $this->commentId,
+            'post_id' => $this->postId,
             'comments_count' => $this->commentsCount,
         ];
     }

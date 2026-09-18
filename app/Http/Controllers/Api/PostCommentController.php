@@ -116,7 +116,7 @@ class PostCommentController extends Controller
         // Broadcast CommentCreated to all users in the channel safely
         $freshCommentsCount = $post->fresh()->comments_count;
         try {
-            broadcast(new CommentCreated($comment, $freshCommentsCount, $post->group_id))->toOthers();
+            broadcast(new CommentCreated($comment, $freshCommentsCount, $post->group_id, $post->event_id))->toOthers();
         } catch (\Throwable $e) {
             report($e);
         }

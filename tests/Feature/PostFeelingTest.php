@@ -64,7 +64,7 @@ class PostFeelingTest extends TestCase
 
         $feelingName = 'SuperEmpolgado!';
 
-        $res = $this->actingAs($user)->putJson('/api/posts/' . $post->id, [
+        $res = $this->actingAs($user)->putJson('/api/posts/'.$post->id, [
             'content' => 'Updated content',
             'feeling_name' => $feelingName,
             'feeling_emoji' => '🎉',

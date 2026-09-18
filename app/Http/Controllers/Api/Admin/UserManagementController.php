@@ -24,8 +24,8 @@ class UserManagementController extends Controller
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('username', 'like', "%{$search}%");
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('username', 'like', "%{$search}%");
             });
         }
 
@@ -39,12 +39,14 @@ class UserManagementController extends Controller
     public function approve(User $user)
     {
         $user->update(['status' => UserStatuses::APPROVED]);
+
         return new UserResource($user);
     }
 
     public function reject(User $user)
     {
         $user->update(['status' => UserStatuses::REJECTED]);
+
         return new UserResource($user);
     }
 
@@ -52,31 +54,35 @@ class UserManagementController extends Controller
     {
         $user->update(['status' => UserStatuses::BANNED]);
         $user->tokens()->delete();
-        
+
         return new UserResource($user);
     }
 
     public function unban(User $user)
     {
         $user->update(['status' => UserStatuses::APPROVED]);
+
         return new UserResource($user);
     }
 
     public function promote(User $user)
     {
         $user->update(['role' => UserRoles::Admin]);
+
         return new UserResource($user);
     }
 
     public function demote(User $user)
     {
         $user->update(['role' => UserRoles::User]);
+
         return new UserResource($user);
     }
 
     public function destroy(User $user)
     {
         $user->delete();
+
         return response()->json(null, 204);
     }
 }

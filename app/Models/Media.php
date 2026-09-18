@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\MediaType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class Media extends Model
 {
@@ -33,11 +34,11 @@ class Media extends Model
     {
         static::deleting(function (Media $media) {
             $raw = $media->getRawOriginal('path') ?? $media->attributes['path'] ?? null;
-            if ($raw && !str_starts_with($raw, 'http://') && !str_starts_with($raw, 'https://')) {
+            if ($raw && ! str_starts_with($raw, 'http://') && ! str_starts_with($raw, 'https://')) {
                 $clean = preg_replace('/^\/?storage\//', '', $raw);
                 $disk = config('filesystems.default', 'public');
                 try {
-                    \Illuminate\Support\Facades\Storage::disk($disk)->delete(ltrim($clean, '/'));
+                    Storage::disk($disk)->delete(ltrim($clean, '/'));
                 } catch (\Throwable $e) {
                     // Ignore deletion errors on model cleanup
                 }
@@ -61,18 +62,21 @@ class Media extends Model
         if (str_contains($value, '/capihouse-media/')) {
             $clean = preg_replace('/^.*\/capihouse-media\//', '', $value);
             $disk = config('filesystems.default', 'public');
-            return \Illuminate\Support\Facades\Storage::disk($disk)->url(ltrim($clean, '/'));
+
+            return Storage::disk($disk)->url(ltrim($clean, '/'));
         }
         if (str_contains($value, '/storage/')) {
             $clean = preg_replace('/^.*\/storage\//', '', $value);
             $disk = config('filesystems.default', 'public');
-            return \Illuminate\Support\Facades\Storage::disk($disk)->url(ltrim($clean, '/'));
+
+            return Storage::disk($disk)->url(ltrim($clean, '/'));
         }
         if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
             return $value;
         }
         $disk = config('filesystems.default', 'public');
-        return \Illuminate\Support\Facades\Storage::disk($disk)->url(ltrim($value, '/'));
+
+        return Storage::disk($disk)->url(ltrim($value, '/'));
     }
 
     public function getUrlAttribute(): ?string
@@ -91,6 +95,7 @@ class Media extends Model
         if (empty($raw)) {
             return null;
         }
+
         return preg_replace('/^\/?storage\//', '', $raw);
     }
 }

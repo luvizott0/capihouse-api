@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Enums\UserRoles;
 use App\Enums\UserStatuses;
-use App\Models\AppNotification;
 use App\Models\Post;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;

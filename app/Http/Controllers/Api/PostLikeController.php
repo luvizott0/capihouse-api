@@ -61,7 +61,7 @@ class PostLikeController extends Controller
 
         // Broadcast PostLiked to all users in the channel safely
         try {
-            broadcast(new PostLiked($post->id, $isLiked, $freshLikesCount, $userId, $post->group_id));
+            broadcast(new PostLiked($post->id, $isLiked, $freshLikesCount, $userId, $post->group_id, $post->event_id));
         } catch (\Throwable $e) {
             report($e);
         }

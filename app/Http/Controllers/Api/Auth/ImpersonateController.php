@@ -18,18 +18,18 @@ class ImpersonateController extends Controller
         $isLocalOrTesting = app()->environment('local', 'testing');
         $isAdmin = auth('sanctum')->check() && auth('sanctum')->user()->isAdmin();
 
-        if (!$isLocalOrTesting && !$isAdmin) {
+        if (! $isLocalOrTesting && ! $isAdmin) {
             return response()->json([
-                'message' => 'Acesso negado. A funcionalidade de impersonate só está disponível em ambiente local ou para administradores.'
+                'message' => 'Acesso negado. A funcionalidade de impersonate só está disponível em ambiente local ou para administradores.',
             ], 403);
         }
 
         $userId = $request->input('user_id');
         $login = $request->input('login') ?? $request->input('username') ?? $request->input('email');
 
-        if (!$userId && !$login) {
+        if (! $userId && ! $login) {
             return response()->json([
-                'message' => 'Informe o user_id, username ou email do usuário para personificar.'
+                'message' => 'Informe o user_id, username ou email do usuário para personificar.',
             ], 422);
         }
 
@@ -42,9 +42,9 @@ class ImpersonateController extends Controller
                 ->first();
         }
 
-        if (!$targetUser) {
+        if (! $targetUser) {
             return response()->json([
-                'message' => 'Usuário não encontrado para personificação.'
+                'message' => 'Usuário não encontrado para personificação.',
             ], 404);
         }
 
@@ -78,7 +78,7 @@ class ImpersonateController extends Controller
      */
     public function devUsers()
     {
-        if (!app()->environment('local', 'testing')) {
+        if (! app()->environment('local', 'testing')) {
             return response()->json(['message' => 'Indisponível neste ambiente.'], 404);
         }
 
