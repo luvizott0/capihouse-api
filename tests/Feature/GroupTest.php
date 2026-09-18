@@ -4,11 +4,15 @@ namespace Tests\Feature;
 
 use App\Enums\UserRoles;
 use App\Enums\UserStatuses;
+use App\Events\GroupMessageDeleted;
+use App\Events\GroupMessageSent;
+use App\Events\GroupMessageUpdated;
 use App\Models\AppNotification;
 use App\Models\Group;
 use App\Models\Post;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class GroupTest extends TestCase
@@ -158,6 +162,98 @@ class GroupTest extends TestCase
 
         $outsiderGet = $this->actingAs($outsider)->getJson("/api/groups/{$group->id}/messages");
         $outsiderGet->assertStatus(403);
+    }
+
+    public function test_group_chat_edit_and_delete_messaging_and_authorization()
+    {
+        Event::fake([
+            GroupMessageSent::class,
+            GroupMessageUpdated::class,
+            GroupMessageDeleted::class,
+        ]);
+
+        $owner = $this->createApprovedUser();
+        $member = $this->createApprovedUser();
+        $otherMember = $this->createApprovedUser();
+        $outsider = $this->createApprovedUser();
+
+        $group = Group::create([
+            'name' => 'Chat Moderado',
+            'creator_id' => $owner->id,
+        ]);
+        $group->members()->attach($owner->id, ['role' => 'owner', 'status' => 'accepted']);
+        $group->members()->attach($member->id, ['role' => 'member', 'status' => 'accepted']);
+        $group->members()->attach($otherMember->id, ['role' => 'member', 'status' => 'accepted']);
+
+        // Member sends message
+        $sendRes = $this->actingAs($member)->postJson("/api/groups/{$group->id}/messages", [
+            'content' => 'Mensagem com erro de digitaçao',
+        ]);
+        $sendRes->assertStatus(201);
+        $messageId = $sendRes->json('id');
+        Event::assertDispatched(GroupMessageSent::class);
+
+        // Member edits their own message
+        $editRes = $this->actingAs($member)->putJson("/api/groups/{$group->id}/messages/{$messageId}", [
+            'content' => 'Mensagem corrigida',
+        ]);
+        $editRes->assertStatus(200)
+            ->assertJsonPath('content', 'Mensagem corrigida')
+            ->assertJsonPath('is_edited', true)
+            ->assertJsonPath('is_deleted', false);
+        Event::assertDispatched(GroupMessageUpdated::class);
+
+        // Other member cannot edit member's message
+        $unauthEdit = $this->actingAs($otherMember)->putJson("/api/groups/{$group->id}/messages/{$messageId}", [
+            'content' => 'Tentativa de alteração',
+        ]);
+        $unauthEdit->assertStatus(403);
+
+        // Outsider cannot edit or delete
+        $outsiderEdit = $this->actingAs($outsider)->putJson("/api/groups/{$group->id}/messages/{$messageId}", [
+            'content' => 'Invasor editando',
+        ]);
+        $outsiderEdit->assertStatus(403);
+
+        $outsiderDelete = $this->actingAs($outsider)->deleteJson("/api/groups/{$group->id}/messages/{$messageId}");
+        $outsiderDelete->assertStatus(403);
+
+        // Other member cannot delete member's message
+        $otherMemberDelete = $this->actingAs($otherMember)->deleteJson("/api/groups/{$group->id}/messages/{$messageId}");
+        $otherMemberDelete->assertStatus(403);
+
+        // Group owner CAN delete member's message (moderation)
+        $ownerDelete = $this->actingAs($owner)->deleteJson("/api/groups/{$group->id}/messages/{$messageId}");
+        $ownerDelete->assertStatus(200)
+            ->assertJsonPath('content', 'mensagem deletada')
+            ->assertJsonPath('is_deleted', true)
+            ->assertJsonPath('is_edited', false);
+        Event::assertDispatched(GroupMessageDeleted::class);
+
+        // Once deleted, messages appear as "mensagem deletada" in index
+        $indexRes = $this->actingAs($member)->getJson("/api/groups/{$group->id}/messages");
+        $indexRes->assertStatus(200)
+            ->assertJsonFragment([
+                'id' => $messageId,
+                'content' => 'mensagem deletada',
+                'is_deleted' => true,
+            ]);
+
+        // Cannot edit an already deleted message
+        $editDeletedRes = $this->actingAs($member)->putJson("/api/groups/{$group->id}/messages/{$messageId}", [
+            'content' => 'Tentando reviver',
+        ]);
+        $editDeletedRes->assertStatus(422);
+
+        // Member can also delete their own message
+        $secondMessage = $group->messages()->create([
+            'user_id' => $member->id,
+            'content' => 'Segunda mensagem para deletar',
+        ]);
+        $selfDelete = $this->actingAs($member)->deleteJson("/api/groups/{$group->id}/messages/{$secondMessage->id}");
+        $selfDelete->assertStatus(200)
+            ->assertJsonPath('content', 'mensagem deletada')
+            ->assertJsonPath('is_deleted', true);
     }
 
     public function test_group_post_privacy_and_historical_access()

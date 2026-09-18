@@ -90,6 +90,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // Group Messages (Chat)
         Route::get('/groups/{group}/messages', [GroupMessageController::class, 'index']);
         Route::post('/groups/{group}/messages', [GroupMessageController::class, 'store']);
+        Route::put('/groups/{group}/messages/{message}', [GroupMessageController::class, 'update']);
+        Route::delete('/groups/{group}/messages/{message}', [GroupMessageController::class, 'destroy']);
 
         // Notifications
         Route::get('/notifications', [NotificationController::class, 'index']);

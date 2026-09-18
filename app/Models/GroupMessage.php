@@ -13,7 +13,38 @@ class GroupMessage extends Model
         'group_id',
         'user_id',
         'content',
+        'edited_at',
+        'deleted_at',
     ];
+
+    protected $casts = [
+        'edited_at' => 'datetime',
+        'deleted_at' => 'datetime',
+    ];
+
+    protected $appends = [
+        'is_edited',
+        'is_deleted',
+    ];
+
+    public function getIsEditedAttribute(): bool
+    {
+        return ! is_null($this->edited_at) && is_null($this->deleted_at);
+    }
+
+    public function getIsDeletedAttribute(): bool
+    {
+        return ! is_null($this->deleted_at);
+    }
+
+    public function getContentAttribute(?string $value): string
+    {
+        if (! is_null($this->deleted_at)) {
+            return 'mensagem deletada';
+        }
+
+        return $value ?? '';
+    }
 
     public function group()
     {
