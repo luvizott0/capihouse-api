@@ -10,11 +10,13 @@ use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\GroupMessageController;
 use App\Http\Controllers\Api\InterestController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\PostCommentController;
 use App\Http\Controllers\Api\PostCommentLikeController;
 use App\Http\Controllers\Api\PostController;
 use App\Http\Controllers\Api\PostLikeController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -100,6 +102,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/notifications/category-counts', [NotificationController::class, 'categoryCounts']);
         Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
         Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+
+        // Notification Preferences
+        Route::get('/user/notification-preferences', [NotificationPreferenceController::class, 'show']);
+        Route::put('/user/notification-preferences', [NotificationPreferenceController::class, 'update']);
+
+        // Web Push Subscriptions
+        Route::get('/push/key', [PushSubscriptionController::class, 'key']);
+        Route::post('/push/subscribe', [PushSubscriptionController::class, 'subscribe']);
+        Route::post('/push/unsubscribe', [PushSubscriptionController::class, 'unsubscribe']);
+        Route::post('/push/test', [PushSubscriptionController::class, 'test']);
 
         // Admin
         Route::middleware('admin')->prefix('admin')->name('admin.')->group(function () {

@@ -228,12 +228,12 @@ class EventController extends Controller
         $user = auth()->user();
         $statusText = $status === 'confirmed' ? 'confirmou presença no' : 'informou que não vai ao';
 
-        $notification = AppNotification::create([
-            'user_id' => $event->user_id,
-            'type' => 'event_rsvp',
-            'title' => 'Confirmação de Presença',
-            'content' => "{$user->name} {$statusText} seu evento \"{$event->name}\".",
-            'data' => [
+        \App\Services\NotificationDispatcherService::send(
+            recipient: $event->user_id,
+            type: 'event_rsvp',
+            title: 'Confirmação de Presença',
+            content: "{$user->name} {$statusText} seu evento \"{$event->name}\".",
+            data: [
                 'event_id' => $event->id,
                 'user_id' => $user->id,
                 'user_name' => $user->name,
@@ -241,17 +241,8 @@ class EventController extends Controller
                 'user_avatar' => $user->avatar_url,
                 'status' => $status,
             ],
-        ]);
-
-        $unreadCount = AppNotification::where('user_id', $event->user_id)
-            ->whereNull('read_at')
-            ->count();
-
-        try {
-            broadcast(new NotificationSent($notification, $unreadCount));
-        } catch (\Throwable $e) {
-            // broadcast fallback
-        }
+            url: '/events/' . $event->id
+        );
 
         return response()->json([
             'message' => 'Presença atualizada com sucesso.',

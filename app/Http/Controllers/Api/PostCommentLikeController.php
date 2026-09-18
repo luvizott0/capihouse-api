@@ -31,12 +31,12 @@ class PostCommentLikeController extends Controller
             if ($comment->user_id !== $userId) {
                 $liker = auth()->user();
                 $snippet = mb_strimwidth($comment->content, 0, 80, '...');
-                $notification = AppNotification::create([
-                    'user_id' => $comment->user_id,
-                    'type' => 'comment_like',
-                    'title' => 'Nova curtida no comentário',
-                    'content' => "{$liker->name} curtiu seu comentário: \"{$snippet}\"",
-                    'data' => [
+                \App\Services\NotificationDispatcherService::send(
+                    recipient: $comment->user_id,
+                    type: 'comment_like',
+                    title: 'Nova curtida no comentário',
+                    content: "{$liker->name} curtiu seu comentário: \"{$snippet}\"",
+                    data: [
                         'post_id' => $comment->post_id,
                         'comment_id' => $comment->id,
                         'liker_id' => $liker->id,
@@ -44,17 +44,8 @@ class PostCommentLikeController extends Controller
                         'liker_username' => $liker->username,
                         'liker_avatar' => $liker->avatar_url,
                     ],
-                ]);
-
-                $unreadCount = AppNotification::where('user_id', $comment->user_id)
-                    ->whereNull('read_at')
-                    ->count();
-
-                try {
-                    broadcast(new NotificationSent($notification, $unreadCount));
-                } catch (\Throwable $e) {
-                    report($e);
-                }
+                    url: '/feed?post=' . $comment->post_id
+                );
             }
         }
 

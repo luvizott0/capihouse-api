@@ -302,29 +302,21 @@ class GroupController extends Controller
                     'status' => 'pending',
                 ]);
 
-                $notification = AppNotification::create([
-                    'user_id' => $targetId,
-                    'type' => 'group_invite',
-                    'title' => 'Convite para grupo',
-                    'content' => "{$sender->name} convidou você para participar do grupo {$group->name}.",
-                    'data' => [
+                \App\Services\NotificationDispatcherService::send(
+                    recipient: $targetId,
+                    type: 'group_invite',
+                    title: 'Convite para grupo',
+                    content: "{$sender->name} convidou você para participar do grupo {$group->name}.",
+                    data: [
                         'group_id' => $group->id,
                         'group_name' => $group->name,
                         'inviter_id' => $sender->id,
                         'inviter_name' => $sender->name,
                         'status' => 'pending',
                     ],
-                ]);
-
-                $unreadCount = AppNotification::where('user_id', $targetId)
-                    ->whereNull('read_at')
-                    ->count();
-
-                try {
-                    broadcast(new NotificationSent($notification, $unreadCount));
-                } catch (\Throwable $e) {
-                    report($e);
-                }
+                    url: '/groups/' . $group->id
+                );
+                $invited[] = $targetId;
             }
         }
     }

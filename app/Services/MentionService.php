@@ -68,21 +68,20 @@ class MentionService
         $snippet = $post->content ? mb_strimwidth($post->content, 0, 80, '...') : 'uma publicação';
 
         foreach ($addedUsers as $user) {
-            $notification = AppNotification::create([
-                'user_id' => $user->id,
-                'type' => 'post_mention',
-                'title' => 'Você foi marcado(a)',
-                'content' => "{$author->name} marcou você em uma publicação: \"{$snippet}\"",
-                'data' => [
+            \App\Services\NotificationDispatcherService::send(
+                recipient: $user->id,
+                type: 'post_mention',
+                title: 'Você foi marcado(a)',
+                content: "{$author->name} marcou você em uma publicação: \"{$snippet}\"",
+                data: [
                     'post_id' => $post->id,
                     'author_id' => $author->id,
                     'author_name' => $author->name,
                     'author_username' => $author->username,
                     'author_avatar' => $author->avatar_url,
                 ],
-            ]);
-
-            self::broadcastNotification($user->id, $notification);
+                url: '/feed?post=' . $post->id
+            );
         }
     }
 
@@ -102,12 +101,12 @@ class MentionService
         $snippet = mb_strimwidth($comment->content, 0, 80, '...');
 
         foreach ($addedUsers as $user) {
-            $notification = AppNotification::create([
-                'user_id' => $user->id,
-                'type' => 'comment_mention',
-                'title' => 'Você foi marcado(a)',
-                'content' => "{$commenter->name} marcou você em um comentário: \"{$snippet}\"",
-                'data' => [
+            \App\Services\NotificationDispatcherService::send(
+                recipient: $user->id,
+                type: 'comment_mention',
+                title: 'Você foi marcado(a)',
+                content: "{$commenter->name} marcou você em um comentário: \"{$snippet}\"",
+                data: [
                     'post_id' => $post->id,
                     'comment_id' => $comment->id,
                     'commenter_id' => $commenter->id,
@@ -115,9 +114,8 @@ class MentionService
                     'commenter_username' => $commenter->username,
                     'commenter_avatar' => $commenter->avatar_url,
                 ],
-            ]);
-
-            self::broadcastNotification($user->id, $notification);
+                url: '/feed?post=' . $post->id
+            );
         }
 
         return $newIds;

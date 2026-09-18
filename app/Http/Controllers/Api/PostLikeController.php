@@ -30,29 +30,20 @@ class PostLikeController extends Controller
 
             if ($post->user_id !== $userId) {
                 $liker = auth()->user();
-                $notification = AppNotification::create([
-                    'user_id' => $post->user_id,
-                    'type' => 'post_like',
-                    'title' => 'Nova curtida',
-                    'content' => "{$liker->name} curtiu sua publicação.",
-                    'data' => [
+                \App\Services\NotificationDispatcherService::send(
+                    recipient: $post->user_id,
+                    type: 'post_like',
+                    title: 'Nova curtida',
+                    content: "{$liker->name} curtiu sua publicação.",
+                    data: [
                         'post_id' => $post->id,
                         'liker_id' => $liker->id,
                         'liker_name' => $liker->name,
                         'liker_username' => $liker->username,
                         'liker_avatar' => $liker->avatar_url,
                     ],
-                ]);
-
-                $unreadCount = AppNotification::where('user_id', $post->user_id)
-                    ->whereNull('read_at')
-                    ->count();
-
-                try {
-                    broadcast(new NotificationSent($notification, $unreadCount));
-                } catch (\Throwable $e) {
-                    report($e);
-                }
+                    url: '/feed?post=' . $post->id
+                );
             }
         }
 

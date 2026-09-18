@@ -9,10 +9,11 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
+use NotificationChannels\WebPush\HasPushSubscriptions;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable, HasPushSubscriptions;
 
     protected $fillable = [
         'name',
@@ -29,6 +30,7 @@ class User extends Authenticatable
         'spotify',
         'last_seen_at',
         'theme',
+        'notification_preferences',
     ];
 
     protected $hidden = [
@@ -48,6 +50,7 @@ class User extends Authenticatable
             'birth' => 'date',
             'last_seen_at' => 'datetime',
             'theme' => 'array',
+            'notification_preferences' => 'array',
         ];
     }
 
@@ -205,5 +208,41 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return $this->role === UserRoles::Admin;
+    }
+
+    public static function defaultNotificationPreferences(): array
+    {
+        return [
+            'likes' => true,
+            'comments' => true,
+            'mentions' => true,
+            'group_invites' => true,
+            'event_invites' => true,
+        ];
+    }
+
+    public function getEffectiveNotificationPreferences(): array
+    {
+        $prefs = $this->notification_preferences ?? [];
+        return array_merge(self::defaultNotificationPreferences(), $prefs);
+    }
+
+    public function wantsNotificationFor(string $type): bool
+    {
+        $category = match ($type) {
+            'post_like', 'comment_like' => 'likes',
+            'post_comment', 'comment_reply', 'comment', 'reply' => 'comments',
+            'post_mention', 'comment_mention' => 'mentions',
+            'group_invite' => 'group_invites',
+            'event_invite', 'event_rsvp' => 'event_invites',
+            default => null,
+        };
+
+        if ($category === null) {
+            return true;
+        }
+
+        $prefs = $this->getEffectiveNotificationPreferences();
+        return (bool) ($prefs[$category] ?? true);
     }
 }

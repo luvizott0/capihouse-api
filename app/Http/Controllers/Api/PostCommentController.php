@@ -50,13 +50,14 @@ class PostCommentController extends Controller
         $snippet = mb_strimwidth($comment->content, 0, 80, '...');
 
         // If this is a reply to another comment, notify the parent comment's author
+        // If this is a reply to another comment, notify the parent comment's author
         if ($parentComment && $parentComment->user_id !== auth()->id() && ! in_array($parentComment->user_id, $mentionedIds)) {
-            $replyNotification = AppNotification::create([
-                'user_id' => $parentComment->user_id,
-                'type' => 'comment_reply',
-                'title' => 'Nova resposta',
-                'content' => "{$commenter->name} respondeu ao seu comentário: \"{$snippet}\"",
-                'data' => [
+            \App\Services\NotificationDispatcherService::send(
+                recipient: $parentComment->user_id,
+                type: 'comment_reply',
+                title: 'Nova resposta',
+                content: "{$commenter->name} respondeu ao seu comentário: \"{$snippet}\"",
+                data: [
                     'post_id' => $post->id,
                     'comment_id' => $comment->id,
                     'parent_id' => $parentComment->id,
@@ -65,17 +66,8 @@ class PostCommentController extends Controller
                     'replier_username' => $commenter->username,
                     'replier_avatar' => $commenter->avatar_url,
                 ],
-            ]);
-
-            $unreadCount = AppNotification::where('user_id', $parentComment->user_id)
-                ->whereNull('read_at')
-                ->count();
-
-            try {
-                broadcast(new NotificationSent($replyNotification, $unreadCount));
-            } catch (\Throwable $e) {
-                report($e);
-            }
+                url: '/feed?post=' . $post->id
+            );
         }
 
         // Notify post author (avoid duplicate if post author is also the parent comment author)
@@ -84,12 +76,12 @@ class PostCommentController extends Controller
             ! in_array($post->user_id, $mentionedIds) &&
             (! $parentComment || $post->user_id !== $parentComment->user_id)
         ) {
-            $notification = AppNotification::create([
-                'user_id' => $post->user_id,
-                'type' => 'post_comment',
-                'title' => 'Novo comentário',
-                'content' => "{$commenter->name} comentou na sua publicação: \"{$snippet}\"",
-                'data' => [
+            \App\Services\NotificationDispatcherService::send(
+                recipient: $post->user_id,
+                type: 'post_comment',
+                title: 'Novo comentário',
+                content: "{$commenter->name} comentou na sua publicação: \"{$snippet}\"",
+                data: [
                     'post_id' => $post->id,
                     'comment_id' => $comment->id,
                     'commenter_id' => $commenter->id,
@@ -97,17 +89,8 @@ class PostCommentController extends Controller
                     'commenter_username' => $commenter->username,
                     'commenter_avatar' => $commenter->avatar_url,
                 ],
-            ]);
-
-            $unreadCount = AppNotification::where('user_id', $post->user_id)
-                ->whereNull('read_at')
-                ->count();
-
-            try {
-                broadcast(new NotificationSent($notification, $unreadCount));
-            } catch (\Throwable $e) {
-                report($e);
-            }
+                url: '/feed?post=' . $post->id
+            );
         }
 
         $comment->is_liked = false;
