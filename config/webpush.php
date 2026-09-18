@@ -9,7 +9,7 @@ return [
      * These keys must be safely stored and should not change.
      */
     'vapid' => [
-        'subject' => env('VAPID_SUBJECT'),
+        'subject' => env('VAPID_SUBJECT', env('APP_URL', 'https://bmo.tailf56388.ts.net')),
         'public_key' => env('VAPID_PUBLIC_KEY'),
         'private_key' => env('VAPID_PRIVATE_KEY'),
         'pem_file' => env('VAPID_PEM_FILE'),
