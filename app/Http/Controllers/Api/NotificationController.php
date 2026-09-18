@@ -19,6 +19,7 @@ class NotificationController extends Controller
         if ($request->filled('category') && $request->category !== 'all') {
             $category = $request->query('category');
             match ($category) {
+                'unread' => $query->whereNull('read_at'),
                 'likes' => $query->whereIn('type', ['post_like', 'comment_like']),
                 'comments' => $query->whereIn('type', ['post_comment', 'comment_reply']),
                 'mentions' => $query->whereIn('type', ['post_mention', 'comment_mention']),
@@ -98,6 +99,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'all' => (int) array_sum($counts),
+            'unread' => (int) $user->appNotifications()->whereNull('read_at')->count(),
             'likes' => (int) (($counts['post_like'] ?? 0) + ($counts['comment_like'] ?? 0)),
             'comments' => (int) (($counts['post_comment'] ?? 0) + ($counts['comment_reply'] ?? 0)),
             'mentions' => (int) (($counts['post_mention'] ?? 0) + ($counts['comment_mention'] ?? 0)),

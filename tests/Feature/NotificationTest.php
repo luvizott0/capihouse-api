@@ -117,12 +117,28 @@ class NotificationTest extends TestCase
         $countsRes->assertStatus(200)
             ->assertJson([
                 'all' => 5,
+                'unread' => 5,
                 'likes' => 2,
                 'comments' => 1,
                 'mentions' => 1,
                 'groups' => 1,
                 'events' => 0,
             ]);
+
+        // Filter by unread
+        $unreadRes = $this->actingAs($user)->getJson('/api/notifications?category=unread');
+        $unreadRes->assertStatus(200)
+            ->assertJsonCount(5, 'data');
+
+        // Mark one as read and verify unread count decreases
+        $firstNotif = AppNotification::where('user_id', $user->id)->first();
+        $firstNotif->update(['read_at' => now()]);
+
+        $countsResAfterRead = $this->actingAs($user)->getJson('/api/notifications/category-counts');
+        $countsResAfterRead->assertJson(['all' => 5, 'unread' => 4]);
+
+        $unreadResAfterRead = $this->actingAs($user)->getJson('/api/notifications?category=unread');
+        $unreadResAfterRead->assertJsonCount(4, 'data');
 
         // Filter by likes
         $likesRes = $this->actingAs($user)->getJson('/api/notifications?category=likes');
