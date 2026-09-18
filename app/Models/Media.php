@@ -55,12 +55,24 @@ class Media extends Model
         if (empty($value)) {
             return null;
         }
+        if (str_starts_with($value, '/')) {
+            return $value;
+        }
+        if (str_contains($value, '/capihouse-media/')) {
+            $clean = preg_replace('/^.*\/capihouse-media\//', '', $value);
+            $disk = config('filesystems.default', 'public');
+            return \Illuminate\Support\Facades\Storage::disk($disk)->url(ltrim($clean, '/'));
+        }
+        if (str_contains($value, '/storage/')) {
+            $clean = preg_replace('/^.*\/storage\//', '', $value);
+            $disk = config('filesystems.default', 'public');
+            return \Illuminate\Support\Facades\Storage::disk($disk)->url(ltrim($clean, '/'));
+        }
         if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
             return $value;
         }
-        $clean = preg_replace('/^\/?storage\//', '', $value);
         $disk = config('filesystems.default', 'public');
-        return \Illuminate\Support\Facades\Storage::disk($disk)->url(ltrim($clean, '/'));
+        return \Illuminate\Support\Facades\Storage::disk($disk)->url(ltrim($value, '/'));
     }
 
     public function getUrlAttribute(): ?string

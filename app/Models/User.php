@@ -56,8 +56,16 @@ class User extends Authenticatable
         if (empty($value)) {
             return null;
         }
-        if (str_starts_with($value, 'http://capihouse.bmo/storage/')) {
-            $relative = substr($value, strlen('http://capihouse.bmo/storage/'));
+        if (str_starts_with($value, '/')) {
+            return $value;
+        }
+        if (str_contains($value, '/capihouse-media/')) {
+            $relative = preg_replace('/^.*\/capihouse-media\//', '', $value);
+            $disk = config('filesystems.default', 'public');
+            return Storage::disk($disk)->url($relative);
+        }
+        if (str_contains($value, '/storage/')) {
+            $relative = preg_replace('/^.*\/storage\//', '', $value);
             $disk = config('filesystems.default', 'public');
             return Storage::disk($disk)->url($relative);
         }
@@ -65,8 +73,7 @@ class User extends Authenticatable
             return $value;
         }
         $disk = config('filesystems.default', 'public');
-        $clean = preg_replace('/^\/?storage\//', '', $value);
-        return Storage::disk($disk)->url(ltrim($clean, '/'));
+        return Storage::disk($disk)->url(ltrim($value, '/'));
     }
 
     public function getBannerUrlAttribute(?string $value): ?string
@@ -74,8 +81,16 @@ class User extends Authenticatable
         if (empty($value)) {
             return null;
         }
-        if (str_starts_with($value, 'http://capihouse.bmo/storage/')) {
-            $relative = substr($value, strlen('http://capihouse.bmo/storage/'));
+        if (str_starts_with($value, '/')) {
+            return $value;
+        }
+        if (str_contains($value, '/capihouse-media/')) {
+            $relative = preg_replace('/^.*\/capihouse-media\//', '', $value);
+            $disk = config('filesystems.default', 'public');
+            return Storage::disk($disk)->url($relative);
+        }
+        if (str_contains($value, '/storage/')) {
+            $relative = preg_replace('/^.*\/storage\//', '', $value);
             $disk = config('filesystems.default', 'public');
             return Storage::disk($disk)->url($relative);
         }
@@ -83,8 +98,7 @@ class User extends Authenticatable
             return $value;
         }
         $disk = config('filesystems.default', 'public');
-        $clean = preg_replace('/^\/?storage\//', '', $value);
-        return Storage::disk($disk)->url(ltrim($clean, '/'));
+        return Storage::disk($disk)->url(ltrim($value, '/'));
     }
 
     public function posts()
