@@ -49,6 +49,14 @@ class NotificationDispatcherService
                 // If url not provided, try to infer from data
                 $targetUrl = $url ?? self::resolveUrl($type, $data);
 
+                // Attach notification ID query param for automatic read-tracking when opened
+                if ($targetUrl && $notification->id) {
+                    $separator = str_contains($targetUrl, '?') ? '&' : '?';
+                    if (! str_contains($targetUrl, 'notif_id=')) {
+                        $targetUrl .= "{$separator}notif_id={$notification->id}";
+                    }
+                }
+
                 $user->notify(new GenericWebPushNotification(
                     title: $title,
                     body: $content,
@@ -75,7 +83,7 @@ class NotificationDispatcherService
     protected static function resolveUrl(string $type, array $data): string
     {
         if (isset($data['post_id'])) {
-            return '/feed?post=' . $data['post_id'];
+            return '/posts/' . $data['post_id'];
         }
 
         if (isset($data['group_id'])) {
@@ -89,3 +97,4 @@ class NotificationDispatcherService
         return '/';
     }
 }
+

@@ -80,7 +80,7 @@ class MentionService
                     'author_username' => $author->username,
                     'author_avatar' => $author->avatar_url,
                 ],
-                url: '/feed?post=' . $post->id
+                url: '/posts/' . $post->id
             );
         }
     }
@@ -114,7 +114,7 @@ class MentionService
                     'commenter_username' => $commenter->username,
                     'commenter_avatar' => $commenter->avatar_url,
                 ],
-                url: '/feed?post=' . $post->id
+                url: '/posts/' . $post->id
             );
         }
 

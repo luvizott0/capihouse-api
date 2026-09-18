@@ -42,7 +42,7 @@ class PostLikeController extends Controller
                         'liker_username' => $liker->username,
                         'liker_avatar' => $liker->avatar_url,
                     ],
-                    url: '/feed?post=' . $post->id
+                    url: '/posts/' . $post->id
                 );
             }
         }

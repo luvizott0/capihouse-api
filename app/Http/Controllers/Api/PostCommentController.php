@@ -89,7 +89,7 @@ class PostCommentController extends Controller
                     'commenter_username' => $commenter->username,
                     'commenter_avatar' => $commenter->avatar_url,
                 ],
-                url: '/feed?post=' . $post->id
+                url: '/posts/' . $post->id
             );
         }
 
