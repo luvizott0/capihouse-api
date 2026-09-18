@@ -29,6 +29,10 @@ class GroupMessageController extends Controller
 
         $messages = $query->orderBy('id', 'asc')->take(100)->get();
 
+        $group->members()->updateExistingPivot($userId, [
+            'last_read_at' => now(),
+        ]);
+
         return response()->json($messages);
     }
 

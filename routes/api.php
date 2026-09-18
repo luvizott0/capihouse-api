@@ -85,6 +85,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/groups/{group}/accept-invite', [GroupController::class, 'acceptInvite']);
         Route::post('/groups/{group}/decline-invite', [GroupController::class, 'declineInvite']);
         Route::post('/groups/{group}/leave', [GroupController::class, 'leave']);
+        Route::post('/groups/{group}/read', [GroupController::class, 'markAsRead']);
         Route::get('/groups/{group}/members', [GroupController::class, 'members']);
 
         // Group Messages (Chat)
@@ -96,6 +97,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Notifications
         Route::get('/notifications', [NotificationController::class, 'index']);
         Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::get('/notifications/category-counts', [NotificationController::class, 'categoryCounts']);
         Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
         Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 

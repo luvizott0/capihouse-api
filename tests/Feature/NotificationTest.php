@@ -70,4 +70,88 @@ class NotificationTest extends TestCase
         $countRes3 = $this->actingAs($user)->getJson('/api/notifications/unread-count');
         $countRes3->assertJson(['unread_count' => 0]);
     }
+
+    public function test_user_can_filter_notifications_by_category_and_get_counts()
+    {
+        $user = $this->createApprovedUser();
+
+        // Create notifications across different categories
+        AppNotification::create([
+            'user_id' => $user->id,
+            'type' => 'post_like',
+            'title' => 'Nova curtida',
+            'content' => 'Alguém curtiu sua publicação',
+        ]);
+
+        AppNotification::create([
+            'user_id' => $user->id,
+            'type' => 'comment_like',
+            'title' => 'Curtida no comentário',
+            'content' => 'Alguém curtiu seu comentário',
+        ]);
+
+        AppNotification::create([
+            'user_id' => $user->id,
+            'type' => 'post_comment',
+            'title' => 'Novo comentário',
+            'content' => 'Comentaram no seu post',
+        ]);
+
+        AppNotification::create([
+            'user_id' => $user->id,
+            'type' => 'post_mention',
+            'title' => 'Menção em post',
+            'content' => 'Você foi mencionado',
+        ]);
+
+        AppNotification::create([
+            'user_id' => $user->id,
+            'type' => 'group_invite',
+            'title' => 'Convite de grupo',
+            'content' => 'Você foi convidado para o grupo',
+            'data' => ['group_id' => 99],
+        ]);
+
+        // Check category counts
+        $countsRes = $this->actingAs($user)->getJson('/api/notifications/category-counts');
+        $countsRes->assertStatus(200)
+            ->assertJson([
+                'all' => 5,
+                'likes' => 2,
+                'comments' => 1,
+                'mentions' => 1,
+                'groups' => 1,
+                'events' => 0,
+            ]);
+
+        // Filter by likes
+        $likesRes = $this->actingAs($user)->getJson('/api/notifications?category=likes');
+        $likesRes->assertStatus(200)
+            ->assertJsonCount(2, 'data');
+
+        // Filter by comments
+        $commentsRes = $this->actingAs($user)->getJson('/api/notifications?category=comments');
+        $commentsRes->assertStatus(200)
+            ->assertJsonCount(1, 'data');
+
+        // Filter by mentions
+        $mentionsRes = $this->actingAs($user)->getJson('/api/notifications?category=mentions');
+        $mentionsRes->assertStatus(200)
+            ->assertJsonCount(1, 'data');
+
+        // Filter by groups
+        $groupsRes = $this->actingAs($user)->getJson('/api/notifications?category=groups');
+        $groupsRes->assertStatus(200)
+            ->assertJsonCount(1, 'data');
+
+        // Filter by events (empty)
+        $eventsRes = $this->actingAs($user)->getJson('/api/notifications?category=events');
+        $eventsRes->assertStatus(200)
+            ->assertJsonCount(0, 'data');
+
+        // Filter by all
+        $allRes = $this->actingAs($user)->getJson('/api/notifications?category=all');
+        $allRes->assertStatus(200)
+            ->assertJsonCount(5, 'data');
+    }
 }

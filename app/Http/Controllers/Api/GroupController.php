@@ -67,6 +67,7 @@ class GroupController extends Controller
         $group->members()->attach(auth()->id(), [
             'role' => 'owner',
             'status' => 'accepted',
+            'last_read_at' => now(),
         ]);
 
         // Photo upload
@@ -198,6 +199,7 @@ class GroupController extends Controller
 
         $group->members()->updateExistingPivot($userId, [
             'status' => 'accepted',
+            'last_read_at' => now(),
         ]);
 
         // Mark corresponding invite notifications as read and accepted
@@ -325,5 +327,24 @@ class GroupController extends Controller
                 }
             }
         }
+    }
+
+    public function markAsRead(Group $group)
+    {
+        $userId = auth()->id();
+        $isMember = $group->members()->where('users.id', $userId)->wherePivot('status', 'accepted')->exists();
+
+        if (! $isMember && ! auth()->user()->isAdmin()) {
+            return response()->json(['message' => 'Não autorizado.'], 403);
+        }
+
+        $group->members()->updateExistingPivot($userId, [
+            'last_read_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Grupo marcado como lido.',
+            'unread_messages_count' => 0,
+        ]);
     }
 }

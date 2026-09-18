@@ -343,4 +343,56 @@ class GroupTest extends TestCase
         $invitedShow = $this->actingAs($invitedUser)->getJson("/api/groups/{$group->id}");
         $invitedShow->assertStatus(200);
     }
+
+    public function test_group_unread_messages_count_and_mark_as_read()
+    {
+        $creator = $this->createApprovedUser();
+        $member = $this->createApprovedUser();
+
+        $group = Group::create([
+            'name' => 'Grupo Não Lidas',
+            'creator_id' => $creator->id,
+        ]);
+        $group->members()->attach($creator->id, [
+            'role' => 'owner',
+            'status' => 'accepted',
+            'last_read_at' => now(),
+        ]);
+        $group->members()->attach($member->id, [
+            'role' => 'member',
+            'status' => 'accepted',
+            'last_read_at' => now(),
+        ]);
+
+        // Initially 0 unread
+        $listRes = $this->actingAs($member)->getJson('/api/groups');
+        $listRes->assertStatus(200);
+        $groupData = collect($listRes->json('data'))->firstWhere('id', $group->id);
+        $this->assertEquals(0, $groupData['unread_messages_count']);
+
+        // Creator sends 2 messages in the group
+        $this->travel(1)->seconds();
+        $this->actingAs($creator)->postJson("/api/groups/{$group->id}/messages", ['content' => 'Mensagem 1']);
+        $this->actingAs($creator)->postJson("/api/groups/{$group->id}/messages", ['content' => 'Mensagem 2']);
+
+        // Member should now see 2 unread messages
+        $listRes2 = $this->actingAs($member)->getJson('/api/groups');
+        $groupData2 = collect($listRes2->json('data'))->firstWhere('id', $group->id);
+        $this->assertEquals(2, $groupData2['unread_messages_count']);
+
+        // Creator should NOT see them as unread because creator sent them
+        $listCreator = $this->actingAs($creator)->getJson('/api/groups');
+        $groupDataCreator = collect($listCreator->json('data'))->firstWhere('id', $group->id);
+        $this->assertEquals(0, $groupDataCreator['unread_messages_count']);
+
+        // Member marks group as read
+        $markRes = $this->actingAs($member)->postJson("/api/groups/{$group->id}/read");
+        $markRes->assertStatus(200)
+            ->assertJsonPath('unread_messages_count', 0);
+
+        // Member now sees 0 unread messages
+        $listRes3 = $this->actingAs($member)->getJson('/api/groups');
+        $groupData3 = collect($listRes3->json('data'))->firstWhere('id', $group->id);
+        $this->assertEquals(0, $groupData3['unread_messages_count']);
+    }
 }

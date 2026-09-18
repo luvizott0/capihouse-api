@@ -21,6 +21,7 @@ class Group extends Model
         'is_member',
         'membership_status',
         'my_role',
+        'unread_messages_count',
     ];
 
     public function creator()
@@ -31,7 +32,7 @@ class Group extends Model
     public function members()
     {
         return $this->belongsToMany(User::class, 'group_users')
-            ->withPivot(['role', 'status'])
+            ->withPivot(['role', 'status', 'last_read_at'])
             ->withTimestamps();
     }
 
@@ -39,7 +40,7 @@ class Group extends Model
     {
         return $this->belongsToMany(User::class, 'group_users')
             ->wherePivot('status', 'accepted')
-            ->withPivot(['role', 'status'])
+            ->withPivot(['role', 'status', 'last_read_at'])
             ->withTimestamps();
     }
 
@@ -127,5 +128,39 @@ class Group extends Model
         $record = $this->members()->where('users.id', $userId)->first();
 
         return $record ? $record->pivot->role : null;
+    }
+
+    public function getUnreadMessagesCountAttribute(): int
+    {
+        if (array_key_exists('unread_messages_count', $this->attributes)) {
+            return (int) $this->attributes['unread_messages_count'];
+        }
+
+        $userId = auth()->id();
+        if (! $userId) {
+            return 0;
+        }
+
+        if ($this->relationLoaded('members')) {
+            $member = $this->members->firstWhere('id', $userId);
+        } else {
+            $member = $this->members()->where('users.id', $userId)->first();
+        }
+
+        if (! $member || $member->pivot->status !== 'accepted') {
+            return 0;
+        }
+
+        $lastReadAt = $member->pivot->last_read_at;
+
+        $query = $this->messages()
+            ->where('user_id', '!=', $userId)
+            ->whereNull('deleted_at');
+
+        if ($lastReadAt) {
+            $query->where('created_at', '>', $lastReadAt);
+        }
+
+        return $query->count();
     }
 }
