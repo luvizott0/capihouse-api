@@ -32,7 +32,7 @@ class GenerateMonthlyRecapCommand extends Command
      */
     public function handle(): int
     {
-        $yearMonth = $this->option('month') ?: now()->format('Y-m');
+        $yearMonth = $this->option('month') ?: now('America/Sao_Paulo')->format('Y-m');
         $force = (bool) $this->option('force');
         $userFilter = $this->option('user');
 
