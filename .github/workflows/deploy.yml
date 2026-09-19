@@ -101,9 +101,9 @@ jobs:
           else
             echo "ℹ️ Modo legado: scripts/deploy-blue-green.sh não encontrado em $TARGET_DIR. Atualizando via docker compose..."
             if [ -f "$TARGET_DIR/docker-compose.yml" ]; then
-              docker compose --project-directory "$TARGET_DIR" -f "$TARGET_DIR/docker-compose.yml" up -d --no-deps capihouse-api capihouse-reverb
+              docker compose --project-directory "$TARGET_DIR" -f "$TARGET_DIR/docker-compose.yml" up -d capihouse-api capihouse-reverb capihouse-queue capihouse-scheduler
             else
-              docker restart capihouse-api capihouse-reverb || echo "Contêineres não estavam em execução."
+              docker restart capihouse-api capihouse-reverb capihouse-queue capihouse-scheduler || echo "Contêineres não estavam em execução."
             fi
 
             echo "🩺 Verificando integridade no modo legado..."
@@ -133,7 +133,7 @@ jobs:
               docker logs --tail 30 capihouse-api || true
               if docker image inspect capihouse-api:rollback-backup >/dev/null 2>&1; then
                 docker tag capihouse-api:rollback-backup capihouse-api:latest
-                docker compose --project-directory "$TARGET_DIR" -f "$TARGET_DIR/docker-compose.yml" up -d --no-deps capihouse-api capihouse-reverb
+                docker compose --project-directory "$TARGET_DIR" -f "$TARGET_DIR/docker-compose.yml" up -d capihouse-api capihouse-reverb capihouse-queue capihouse-scheduler
               fi
               exit 1
             fi

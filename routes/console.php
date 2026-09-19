@@ -9,6 +9,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('capihouse:generate-monthly-recap')
+    ->timezone('America/Sao_Paulo')
     ->dailyAt('20:00')
-    ->when(fn () => now()->isSameDay(now()->endOfMonth()))
+    ->when(fn () => now('America/Sao_Paulo')->isSameDay(now('America/Sao_Paulo')->endOfMonth()))
     ->name('capihouse-monthly-feeling-recap');
