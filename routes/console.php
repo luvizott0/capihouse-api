@@ -13,3 +13,8 @@ Schedule::command('capihouse:generate-monthly-recap')
     ->dailyAt('00:05')
     ->when(fn () => now('America/Sao_Paulo')->isSameDay(now('America/Sao_Paulo')->endOfMonth()))
     ->name('capihouse-monthly-feeling-recap');
+
+Schedule::command('capihouse:generate-birthday-posts')
+    ->timezone('America/Sao_Paulo')
+    ->dailyAt('08:00')
+    ->name('capihouse-daily-birthday-posts');
