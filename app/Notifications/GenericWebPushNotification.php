@@ -8,7 +8,7 @@ use Illuminate\Notifications\Notification;
 use NotificationChannels\WebPush\WebPushChannel;
 use NotificationChannels\WebPush\WebPushMessage;
 
-class GenericWebPushNotification extends Notification
+class GenericWebPushNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 

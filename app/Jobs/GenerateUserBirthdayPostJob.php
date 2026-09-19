@@ -64,9 +64,10 @@ class GenerateUserBirthdayPostJob implements ShouldQueue
             ? "Completando {$age} anos de muita luz e histórias para contar! "
             : '';
 
-        $content = "🎂 Hoje é um dia muito especial! Parabéns, @{$this->user->username}! 🎉🎈\n\n"
-            ."{$ageText}Desejamos que o seu novo ciclo seja repleto de momentos acolhedores, alegrias e muito afeto aqui na CapiHouse! 🌿🛋️\n\n"
-            ."Deixem aqui nos comentários seus votos de parabéns para celebrar esse dia tão lindo! ✨🐾";
+        $content = "🎂 Hoje é um dia muito especial na nossa casa! Parabéns, @{$this->user->username}! 🎉🎈\n\n"
+            ."{$ageText}Desejamos que o seu novo ciclo seja repleto de momentos acolhedores, alegrias e muito afeto aqui no CapiHouse! 🌿🛋️\n\n"
+            ."Deixem aqui nos comentários seus votos de parabéns para celebrar esse dia tão lindo! ✨🐾\n"
+            ."#AniversarioCapiHouse #Parabens";
 
         // 5. Criar publicação no feed
         $post = Post::create([
