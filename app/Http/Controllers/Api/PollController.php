@@ -156,4 +156,54 @@ class PollController extends Controller
             'options' => $formattedOptions,
         ]);
     }
+
+    public function voters(Post $post)
+    {
+        $userId = auth()->id();
+        $isAdmin = auth()->user()->isAdmin();
+        $isAuthor = (int) $post->user_id === (int) $userId;
+
+        if (! $isAuthor && ! $isAdmin) {
+            return response()->json(['message' => 'Apenas o autor da enquete pode ver quem votou.'], 403);
+        }
+
+        $poll = $post->poll;
+        if (! $poll) {
+            return response()->json(['message' => 'Votação não encontrada nesta publicação.'], 404);
+        }
+
+        $poll->load([
+            'options' => function ($q) {
+                $q->orderBy('order')->orderBy('id');
+            },
+            'options.votes.user' => function ($q) {
+                $q->select('id', 'name', 'username', 'avatar_url');
+            },
+        ]);
+
+        $options = $poll->options->map(function ($opt) {
+            return [
+                'id' => $opt->id,
+                'text' => $opt->text,
+                'votes_count' => (int) $opt->votes_count,
+                'voters' => $opt->votes->map(function ($vote) {
+                    $user = $vote->user;
+
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'username' => $user->username,
+                        'avatar_url' => $user->avatar_url,
+                    ];
+                })->values()->all(),
+            ];
+        });
+
+        return response()->json([
+            'poll_id' => $poll->id,
+            'post_id' => $post->id,
+            'question' => $poll->question,
+            'options' => $options,
+        ]);
+    }
 }

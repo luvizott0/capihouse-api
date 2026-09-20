@@ -285,4 +285,84 @@ class PollTest extends TestCase
         $this->assertEquals(1, $authorView->json('poll.options.0.votes_count'));
         $this->assertEquals(100, $authorView->json('poll.options.0.percentage'));
     }
+
+    public function test_author_can_view_poll_voters()
+    {
+        $author = $this->createApprovedUser();
+        $voter1 = $this->createApprovedUser();
+        $voter2 = $this->createApprovedUser();
+
+        $res = $this->actingAs($author)->postJson('/api/posts', [
+            'poll' => [
+                'question' => 'Quem votou?',
+                'options' => ['Opção A', 'Opção B'],
+            ],
+        ]);
+        $postId = $res->json('id');
+        $optA = $res->json('poll.options.0.id');
+        $optB = $res->json('poll.options.1.id');
+
+        $this->actingAs($voter1)->postJson("/api/posts/{$postId}/poll/vote", ['option_id' => $optA])->assertStatus(200);
+        $this->actingAs($voter2)->postJson("/api/posts/{$postId}/poll/vote", ['option_id' => $optB])->assertStatus(200);
+
+        $votersRes = $this->actingAs($author)->getJson("/api/posts/{$postId}/poll/voters");
+        $votersRes->assertStatus(200);
+        $votersRes->assertJsonPath('question', 'Quem votou?');
+        $this->assertCount(2, $votersRes->json('options'));
+
+        // Option A has voter 1
+        $this->assertEquals($optA, $votersRes->json('options.0.id'));
+        $this->assertEquals(1, $votersRes->json('options.0.votes_count'));
+        $this->assertCount(1, $votersRes->json('options.0.voters'));
+        $this->assertEquals($voter1->username, $votersRes->json('options.0.voters.0.username'));
+
+        // Option B has voter 2
+        $this->assertEquals($optB, $votersRes->json('options.1.id'));
+        $this->assertEquals(1, $votersRes->json('options.1.votes_count'));
+        $this->assertCount(1, $votersRes->json('options.1.voters'));
+        $this->assertEquals($voter2->username, $votersRes->json('options.1.voters.0.username'));
+    }
+
+    public function test_non_author_cannot_view_poll_voters()
+    {
+        $author = $this->createApprovedUser();
+        $otherUser = $this->createApprovedUser();
+
+        $res = $this->actingAs($author)->postJson('/api/posts', [
+            'poll' => [
+                'question' => 'Privado',
+                'options' => ['Opção 1', 'Opção 2'],
+            ],
+        ]);
+        $postId = $res->json('id');
+
+        $votersRes = $this->actingAs($otherUser)->getJson("/api/posts/{$postId}/poll/voters");
+        $votersRes->assertStatus(403);
+    }
+
+    public function test_admin_can_view_poll_voters()
+    {
+        $author = $this->createApprovedUser();
+        $admin = User::factory()->create([
+            'status' => UserStatuses::APPROVED,
+            'role' => UserRoles::Admin,
+        ]);
+        $voter = $this->createApprovedUser();
+
+        $res = $this->actingAs($author)->postJson('/api/posts', [
+            'poll' => [
+                'question' => 'Admin vê',
+                'options' => ['Opção 1', 'Opção 2'],
+            ],
+        ]);
+        $postId = $res->json('id');
+        $optId = $res->json('poll.options.0.id');
+
+        $this->actingAs($voter)->postJson("/api/posts/{$postId}/poll/vote", ['option_id' => $optId])->assertStatus(200);
+
+        $votersRes = $this->actingAs($admin)->getJson("/api/posts/{$postId}/poll/voters");
+        $votersRes->assertStatus(200);
+        $this->assertEquals(1, $votersRes->json('options.0.votes_count'));
+        $this->assertEquals($voter->username, $votersRes->json('options.0.voters.0.username'));
+    }
 }

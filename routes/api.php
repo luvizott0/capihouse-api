@@ -64,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/posts/{post}', [PostController::class, 'destroy']);
         Route::post('/posts/{post}/like', [PostLikeController::class, 'toggle']);
         Route::post('/posts/{post}/poll/vote', [PollController::class, 'vote']);
+        Route::get('/posts/{post}/poll/voters', [PollController::class, 'voters']);
         Route::post('/posts/{post}/comments', [PostCommentController::class, 'store']);
         Route::put('/comments/{comment}', [PostCommentController::class, 'update']);
         Route::delete('/comments/{comment}', [PostCommentController::class, 'destroy']);
