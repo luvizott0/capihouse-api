@@ -18,3 +18,7 @@ Schedule::command('capihouse:generate-birthday-posts')
     ->timezone('America/Sao_Paulo')
     ->dailyAt('08:00')
     ->name('capihouse-daily-birthday-posts');
+
+Schedule::command('letterboxd:sync')
+    ->hourly()
+    ->name('capihouse-hourly-letterboxd-sync');

@@ -36,6 +36,8 @@ class PostController extends Controller
             'likes' => fn ($q) => $q->where('user_id', $userId),
             'poll.options',
             'poll.votes' => fn ($q) => $q->where('user_id', $userId),
+            'repostedPost.user:id,name,username,avatar_url',
+            'repostedPost.media',
         ])
             ->withCount(['likes', 'comments']);
 
@@ -59,9 +61,19 @@ class PostController extends Controller
             }
             $query->where('group_id', $groupId);
             $query->whereNull('event_id');
+        } elseif ($request->input('category') === 'entertainment') {
+            // Aba de entretenimento: apenas posts da categoria entertainment (sempre públicos, fora de grupos/eventos)
+            $query->whereNull('event_id')->whereNull('group_id');
+            $query->where('category', 'entertainment');
+            if ($request->filled('entertainment_type')) {
+                $query->where('entertainment_type', $request->input('entertainment_type'));
+            }
         } else {
-            // General feed: public posts + posts of groups user is an accepted member of (never event posts)
+            // Feed geral: posts normais/reposts (categoria feed ou null) + posts de grupos que o usuário participa
             $query->whereNull('event_id');
+            $query->where(function ($q) {
+                $q->whereNull('category')->orWhere('category', 'feed');
+            });
             $query->where(function ($q) use ($userId, $isAdmin) {
                 $q->whereNull('group_id');
                 if ($isAdmin) {
@@ -159,6 +171,8 @@ class PostController extends Controller
             'likes' => fn ($q) => $q->where('user_id', $userId),
             'poll.options',
             'poll.votes' => fn ($q) => $q->where('user_id', $userId),
+            'repostedPost.user:id,name,username,avatar_url',
+            'repostedPost.media',
         ])->loadCount(['likes', 'comments']);
 
         $post->is_liked = $post->likes->isNotEmpty();
@@ -198,6 +212,7 @@ class PostController extends Controller
             'content' => 'nullable|string|max:2000',
             'group_id' => 'nullable|exists:groups,id',
             'event_id' => 'nullable|exists:events,id',
+            'repost_of_id' => 'nullable|exists:posts,id',
             'feeling_name' => 'nullable|string|max:15',
             'feeling_emoji' => 'nullable|string|max:32',
             'hashtags' => 'nullable|array',
@@ -221,9 +236,21 @@ class PostController extends Controller
             'poll.options.*.max' => 'Cada opção da votação pode ter no máximo 100 caracteres.',
         ]);
 
+        $repostId = $request->input('repost_of_id');
+        if ($repostId) {
+            $originalPost = Post::find($repostId);
+            if (! $originalPost) {
+                return response()->json(['message' => 'A publicação original a ser repostada não foi encontrada.'], 404);
+            }
+            // Decisão: apenas o próprio autor pode repostar por enquanto
+            if ($originalPost->user_id !== auth()->id() && ! auth()->user()->isAdmin()) {
+                return response()->json(['message' => 'Você só pode repostar suas próprias atividades no momento.'], 403);
+            }
+        }
+
         $hasPoll = $request->filled('poll.options') && count((array) $request->input('poll.options')) >= 2;
-        if (! $request->filled('content') && ! $request->hasFile('media') && ! $hasPoll) {
-            return response()->json(['message' => 'O post precisa ter texto, mídia ou votação.'], 422);
+        if (! $request->filled('content') && ! $request->hasFile('media') && ! $hasPoll && ! $repostId) {
+            return response()->json(['message' => 'O post precisa ter texto, mídia, votação ou um repost.'], 422);
         }
 
         $groupId = $request->input('group_id');
@@ -247,6 +274,8 @@ class PostController extends Controller
             'user_id' => auth()->id(),
             'group_id' => $groupId,
             'event_id' => $eventId,
+            'category' => 'feed',
+            'repost_of_id' => $repostId,
             'content' => $request->input('content'),
         ]);
 
@@ -319,6 +348,8 @@ class PostController extends Controller
             'likes',
             'poll.options',
             'poll.votes' => fn ($q) => $q->where('user_id', auth()->id()),
+            'repostedPost.user:id,name,username,avatar_url',
+            'repostedPost.media',
         ]);
         $post->is_liked = false;
         $this->formatPostPoll($post, auth()->id());
@@ -347,7 +378,7 @@ class PostController extends Controller
             'hashtags.*' => 'string|max:50',
         ]);
 
-        if (! $request->filled('content') && ! $post->media()->exists() && ! $post->poll()->exists()) {
+        if (! $request->filled('content') && ! $post->media()->exists() && ! $post->poll()->exists() && ! $post->repost_of_id) {
             return response()->json(['message' => 'O post precisa ter texto, mídia ou votação.'], 422);
         }
 
@@ -404,6 +435,8 @@ class PostController extends Controller
             'likes',
             'poll.options',
             'poll.votes' => fn ($q) => $q->where('user_id', auth()->id()),
+            'repostedPost.user:id,name,username,avatar_url',
+            'repostedPost.media',
         ]);
         $post->is_liked = $post->likes()->where('user_id', auth()->id())->exists();
         $this->formatPostPoll($post, auth()->id());

@@ -16,7 +16,30 @@ class Post extends Model
         'content',
         'likes_count',
         'comments_count',
+        'category',
+        'entertainment_type',
+        'external_source',
+        'external_id',
+        'metadata',
+        'repost_of_id',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'metadata' => 'array',
+        ];
+    }
+
+    public function repostedPost()
+    {
+        return $this->belongsTo(Post::class, 'repost_of_id');
+    }
+
+    public function reposts()
+    {
+        return $this->hasMany(Post::class, 'repost_of_id');
+    }
 
     public function user()
     {

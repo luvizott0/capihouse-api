@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\GroupMessageController;
 use App\Http\Controllers\Api\InterestController;
+use App\Http\Controllers\Api\LetterboxdController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\PollController;
@@ -46,6 +47,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/profile/password', [ProfileController::class, 'updatePassword']);
         Route::post('/profile/theme-background', [ProfileController::class, 'uploadThemeBackground']);
         Route::delete('/profile/theme', [ProfileController::class, 'resetTheme']);
+        Route::post('/profile/letterboxd/connect', [LetterboxdController::class, 'connect']);
+        Route::post('/profile/letterboxd/disconnect', [LetterboxdController::class, 'disconnect']);
+        Route::post('/profile/letterboxd/sync', [LetterboxdController::class, 'sync']);
 
         // Users
         Route::get('/users', [UserController::class, 'index']);
