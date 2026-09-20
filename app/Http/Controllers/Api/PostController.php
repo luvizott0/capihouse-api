@@ -465,7 +465,11 @@ class PostController extends Controller
         $userVotedOptionId = $userVote?->poll_option_id;
         $totalVotes = $poll->relationLoaded('options') ? (int) $poll->options->sum('votes_count') : 0;
 
-        $formattedOptions = $poll->options->map(function ($opt) use ($hasVoted, $totalVotes) {
+        $isAuthor = (int) $post->user_id === (int) $userId;
+        $isAdmin = auth()->user()?->isAdmin() ?? false;
+        $canSeeResults = $hasVoted || $isAuthor || $isAdmin;
+
+        $formattedOptions = $poll->options->map(function ($opt) use ($canSeeResults, $totalVotes) {
             $item = [
                 'id' => $opt->id,
                 'poll_id' => $opt->poll_id,
@@ -473,7 +477,7 @@ class PostController extends Controller
                 'order' => $opt->order,
             ];
 
-            if ($hasVoted) {
+            if ($canSeeResults) {
                 $votes = (int) $opt->votes_count;
                 $item['votes_count'] = $votes;
                 $item['percentage'] = $totalVotes > 0 ? round(($votes / $totalVotes) * 100, 1) : 0;
@@ -490,8 +494,9 @@ class PostController extends Controller
             'post_id' => $poll->post_id,
             'question' => $poll->question,
             'has_voted' => $hasVoted,
+            'can_see_results' => $canSeeResults,
             'user_voted_option_id' => $userVotedOptionId,
-            'total_votes' => $hasVoted ? $totalVotes : null,
+            'total_votes' => $canSeeResults ? $totalVotes : null,
             'options' => $formattedOptions,
         ];
 

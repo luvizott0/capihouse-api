@@ -8,6 +8,7 @@ use App\Models\Event;
 use App\Models\PollOption;
 use App\Models\PollVote;
 use App\Models\Post;
+use App\Services\NotificationDispatcherService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -53,7 +54,9 @@ class PollController extends Controller
             return response()->json(['message' => 'Opção inválida para esta votação.'], 422);
         }
 
-        DB::transaction(function () use ($poll, $optionId, $userId) {
+        $isFirstVote = false;
+
+        DB::transaction(function () use ($poll, $optionId, $userId, &$isFirstVote) {
             $existingVote = PollVote::where('poll_id', $poll->id)->where('user_id', $userId)->first();
 
             if ($existingVote) {
@@ -70,6 +73,8 @@ class PollController extends Controller
                     $existingVote->update(['poll_option_id' => $optionId]);
                 }
             } else {
+                $isFirstVote = true;
+
                 // Create vote
                 PollVote::create([
                     'poll_id' => $poll->id,
@@ -81,6 +86,26 @@ class PollController extends Controller
                 PollOption::where('id', $optionId)->increment('votes_count');
             }
         });
+
+        // Send notification to author only on first vote, and only if voter is not the author
+        if ($isFirstVote && $post->user_id !== $userId) {
+            $voter = auth()->user();
+            NotificationDispatcherService::send(
+                recipient: $post->user_id,
+                type: 'poll_vote',
+                title: 'Novo voto na enquete',
+                content: "{$voter->name} votou na sua enquete.",
+                data: [
+                    'post_id' => $post->id,
+                    'poll_id' => $poll->id,
+                    'voter_id' => $voter->id,
+                    'voter_name' => $voter->name,
+                    'voter_username' => $voter->username,
+                    'voter_avatar' => $voter->avatar_url,
+                ],
+                url: '/posts/'.$post->id
+            );
+        }
 
         // Reload poll and options
         $poll->load('options');
@@ -125,6 +150,7 @@ class PollController extends Controller
             'post_id' => $poll->post_id,
             'question' => $poll->question,
             'has_voted' => true,
+            'can_see_results' => true,
             'user_voted_option_id' => $optionId,
             'total_votes' => $totalVotes,
             'options' => $formattedOptions,

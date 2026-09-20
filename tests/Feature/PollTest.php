@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\UserRoles;
 use App\Enums\UserStatuses;
+use App\Models\AppNotification;
 use App\Models\PollVote;
 use App\Models\Post;
 use App\Models\User;
@@ -37,11 +38,12 @@ class PollTest extends TestCase
         $res->assertStatus(201);
         $res->assertJsonPath('poll.question', 'Qual o melhor dia?');
         $res->assertJsonPath('poll.has_voted', false);
+        $res->assertJsonPath('poll.can_see_results', true);
         $res->assertJsonPath('poll.user_voted_option_id', null);
-        $res->assertJsonPath('poll.total_votes', null);
+        $res->assertJsonPath('poll.total_votes', 0);
         $this->assertCount(3, $res->json('poll.options'));
-        $this->assertNull($res->json('poll.options.0.votes_count'));
-        $this->assertNull($res->json('poll.options.0.percentage'));
+        $this->assertEquals(0, $res->json('poll.options.0.votes_count'));
+        $this->assertEquals(0, $res->json('poll.options.0.percentage'));
 
         $this->assertDatabaseHas('polls', [
             'question' => 'Qual o melhor dia?',
@@ -208,5 +210,79 @@ class PollTest extends TestCase
         $this->assertDatabaseMissing('posts', ['id' => $postId]);
         $this->assertDatabaseMissing('polls', ['id' => $pollId]);
         $this->assertDatabaseMissing('poll_options', ['poll_id' => $pollId]);
+    }
+
+    public function test_author_is_notified_only_on_first_vote_from_other_user()
+    {
+        $author = $this->createApprovedUser();
+        $voter = $this->createApprovedUser();
+
+        $res = $this->actingAs($author)->postJson('/api/posts', [
+            'poll' => [
+                'options' => ['Opção 1', 'Opção 2'],
+            ],
+        ]);
+        $postId = $res->json('id');
+        $opt1Id = $res->json('poll.options.0.id');
+        $opt2Id = $res->json('poll.options.1.id');
+
+        // 1. Voter votes on option 1 -> author should receive notification
+        $this->actingAs($voter)->postJson("/api/posts/{$postId}/poll/vote", [
+            'option_id' => $opt1Id,
+        ])->assertStatus(200);
+
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $author->id,
+            'type' => 'poll_vote',
+        ]);
+        $this->assertEquals(1, AppNotification::where('user_id', $author->id)->where('type', 'poll_vote')->count());
+
+        // 2. Voter changes vote to option 2 -> NO new notification should be sent
+        $this->actingAs($voter)->postJson("/api/posts/{$postId}/poll/vote", [
+            'option_id' => $opt2Id,
+        ])->assertStatus(200);
+
+        $this->assertEquals(1, AppNotification::where('user_id', $author->id)->where('type', 'poll_vote')->count());
+
+        // 3. Author votes on own poll -> NO notification should be created
+        $this->actingAs($author)->postJson("/api/posts/{$postId}/poll/vote", [
+            'option_id' => $opt1Id,
+        ])->assertStatus(200);
+
+        $this->assertEquals(1, AppNotification::where('user_id', $author->id)->where('type', 'poll_vote')->count());
+    }
+
+    public function test_author_sees_results_even_without_voting()
+    {
+        $author = $this->createApprovedUser();
+        $viewer = $this->createApprovedUser();
+
+        $res = $this->actingAs($author)->postJson('/api/posts', [
+            'poll' => [
+                'question' => 'Enquete do autor',
+                'options' => ['Opção 1', 'Opção 2'],
+            ],
+        ]);
+        $postId = $res->json('id');
+        $opt1Id = $res->json('poll.options.0.id');
+
+        // Viewer votes
+        $this->actingAs($viewer)->postJson("/api/posts/{$postId}/poll/vote", [
+            'option_id' => $opt1Id,
+        ])->assertStatus(200);
+
+        // Viewer checks post -> cannot see results yet
+        $viewerCheck = $this->actingAs($this->createApprovedUser())->getJson("/api/posts/{$postId}");
+        $viewerCheck->assertJsonPath('poll.can_see_results', false);
+        $this->assertNull($viewerCheck->json('poll.options.0.votes_count'));
+
+        // Author fetches the post WITHOUT having voted
+        $authorView = $this->actingAs($author)->getJson("/api/posts/{$postId}");
+        $authorView->assertStatus(200);
+        $authorView->assertJsonPath('poll.has_voted', false);
+        $authorView->assertJsonPath('poll.can_see_results', true);
+        $authorView->assertJsonPath('poll.total_votes', 1);
+        $this->assertEquals(1, $authorView->json('poll.options.0.votes_count'));
+        $this->assertEquals(100, $authorView->json('poll.options.0.percentage'));
     }
 }
