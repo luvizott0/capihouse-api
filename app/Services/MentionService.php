@@ -68,7 +68,7 @@ class MentionService
         $snippet = $post->content ? mb_strimwidth($post->content, 0, 80, '...') : 'uma publicação';
 
         foreach ($addedUsers as $user) {
-            \App\Services\NotificationDispatcherService::send(
+            NotificationDispatcherService::send(
                 recipient: $user->id,
                 type: 'post_mention',
                 title: 'Você foi marcado(a)',
@@ -80,7 +80,7 @@ class MentionService
                     'author_username' => $author->username,
                     'author_avatar' => $author->avatar_url,
                 ],
-                url: '/posts/' . $post->id
+                url: '/posts/'.$post->id
             );
         }
     }
@@ -101,7 +101,7 @@ class MentionService
         $snippet = mb_strimwidth($comment->content, 0, 80, '...');
 
         foreach ($addedUsers as $user) {
-            \App\Services\NotificationDispatcherService::send(
+            NotificationDispatcherService::send(
                 recipient: $user->id,
                 type: 'comment_mention',
                 title: 'Você foi marcado(a)',
@@ -114,7 +114,7 @@ class MentionService
                     'commenter_username' => $commenter->username,
                     'commenter_avatar' => $commenter->avatar_url,
                 ],
-                url: '/posts/' . $post->id
+                url: '/posts/'.$post->id
             );
         }
 

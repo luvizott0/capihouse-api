@@ -5,12 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Events\CommentCreated;
 use App\Events\CommentDeleted;
 use App\Events\CommentUpdated;
-use App\Events\NotificationSent;
 use App\Http\Controllers\Controller;
-use App\Models\AppNotification;
 use App\Models\Post;
 use App\Models\PostComment;
 use App\Services\MentionService;
+use App\Services\NotificationDispatcherService;
 use Illuminate\Http\Request;
 
 class PostCommentController extends Controller
@@ -52,7 +51,7 @@ class PostCommentController extends Controller
         // If this is a reply to another comment, notify the parent comment's author
         // If this is a reply to another comment, notify the parent comment's author
         if ($parentComment && $parentComment->user_id !== auth()->id() && ! in_array($parentComment->user_id, $mentionedIds)) {
-            \App\Services\NotificationDispatcherService::send(
+            NotificationDispatcherService::send(
                 recipient: $parentComment->user_id,
                 type: 'comment_reply',
                 title: 'Nova resposta',
@@ -66,7 +65,7 @@ class PostCommentController extends Controller
                     'replier_username' => $commenter->username,
                     'replier_avatar' => $commenter->avatar_url,
                 ],
-                url: '/feed?post=' . $post->id
+                url: '/feed?post='.$post->id
             );
         }
 
@@ -76,7 +75,7 @@ class PostCommentController extends Controller
             ! in_array($post->user_id, $mentionedIds) &&
             (! $parentComment || $post->user_id !== $parentComment->user_id)
         ) {
-            \App\Services\NotificationDispatcherService::send(
+            NotificationDispatcherService::send(
                 recipient: $post->user_id,
                 type: 'post_comment',
                 title: 'Novo comentário',
@@ -89,7 +88,7 @@ class PostCommentController extends Controller
                     'commenter_username' => $commenter->username,
                     'commenter_avatar' => $commenter->avatar_url,
                 ],
-                url: '/posts/' . $post->id
+                url: '/posts/'.$post->id
             );
         }
 

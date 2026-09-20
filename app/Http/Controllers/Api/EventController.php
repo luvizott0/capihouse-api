@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\MediaType;
-use App\Events\NotificationSent;
 use App\Http\Controllers\Controller;
-use App\Models\AppNotification;
 use App\Models\Event;
 use App\Models\User;
+use App\Services\NotificationDispatcherService;
 use Illuminate\Http\Request;
 
 class EventController extends Controller
@@ -228,7 +227,7 @@ class EventController extends Controller
         $user = auth()->user();
         $statusText = $status === 'confirmed' ? 'confirmou presença no' : 'informou que não vai ao';
 
-        \App\Services\NotificationDispatcherService::send(
+        NotificationDispatcherService::send(
             recipient: $event->user_id,
             type: 'event_rsvp',
             title: 'Confirmação de Presença',
@@ -241,7 +240,7 @@ class EventController extends Controller
                 'user_avatar' => $user->avatar_url,
                 'status' => $status,
             ],
-            url: '/events/' . $event->id
+            url: '/events/'.$event->id
         );
 
         return response()->json([

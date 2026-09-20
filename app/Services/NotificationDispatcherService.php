@@ -67,7 +67,7 @@ class NotificationDispatcherService
                     ])
                 ));
             } catch (\Throwable $e) {
-                Log::warning('Falha ao despachar Web Push notification: ' . $e->getMessage(), [
+                Log::warning('Falha ao despachar Web Push notification: '.$e->getMessage(), [
                     'user_id' => $userId,
                     'type' => $type,
                 ]);
@@ -83,18 +83,17 @@ class NotificationDispatcherService
     protected static function resolveUrl(string $type, array $data): string
     {
         if (isset($data['post_id'])) {
-            return '/posts/' . $data['post_id'];
+            return '/posts/'.$data['post_id'];
         }
 
         if (isset($data['group_id'])) {
-            return '/groups/' . $data['group_id'];
+            return '/groups/'.$data['group_id'];
         }
 
         if (isset($data['event_id'])) {
-            return '/events/' . $data['event_id'];
+            return '/events/'.$data['event_id'];
         }
 
         return '/';
     }
 }
-

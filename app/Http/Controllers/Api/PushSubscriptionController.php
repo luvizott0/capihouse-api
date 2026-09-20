@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Notifications\GenericWebPushNotification;
 use Illuminate\Http\Request;
 
 class PushSubscriptionController extends Controller
@@ -76,7 +77,7 @@ class PushSubscriptionController extends Controller
         }
 
         try {
-            $user->notify(new \App\Notifications\GenericWebPushNotification(
+            $user->notify(new GenericWebPushNotification(
                 title: '🧪 Teste CapiHouse',
                 body: 'Parabéns! Suas notificações push estão funcionando perfeitamente.',
                 url: '/profile',
@@ -92,7 +93,7 @@ class PushSubscriptionController extends Controller
             ]);
         } catch (\Throwable $e) {
             return response()->json([
-                'message' => 'Falha ao enviar notificação de teste: ' . $e->getMessage(),
+                'message' => 'Falha ao enviar notificação de teste: '.$e->getMessage(),
             ], 500);
         }
     }

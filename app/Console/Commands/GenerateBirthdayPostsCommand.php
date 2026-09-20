@@ -109,6 +109,7 @@ class GenerateBirthdayPostsCommand extends Command
                     BirthdayPost::where('user_id', $user->id)->where('year', $year)->delete();
                 } else {
                     $this->line("ℹ️ Post de aniversário já gerado para {$user->name} (@{$user->username}) em {$year}. Pulando.");
+
                     continue;
                 }
             }

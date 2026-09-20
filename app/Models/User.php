@@ -13,7 +13,7 @@ use NotificationChannels\WebPush\HasPushSubscriptions;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable, HasPushSubscriptions;
+    use HasApiTokens, HasFactory, HasPushSubscriptions, Notifiable;
 
     protected $fillable = [
         'name',
@@ -224,6 +224,7 @@ class User extends Authenticatable
     public function getEffectiveNotificationPreferences(): array
     {
         $prefs = $this->notification_preferences ?? [];
+
         return array_merge(self::defaultNotificationPreferences(), $prefs);
     }
 
@@ -243,6 +244,7 @@ class User extends Authenticatable
         }
 
         $prefs = $this->getEffectiveNotificationPreferences();
+
         return (bool) ($prefs[$category] ?? true);
     }
 }

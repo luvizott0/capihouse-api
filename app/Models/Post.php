@@ -58,6 +58,11 @@ class Post extends Model
         return $this->hasOne(Feeling::class);
     }
 
+    public function poll()
+    {
+        return $this->hasOne(Poll::class);
+    }
+
     public function media()
     {
         return $this->morphMany(Media::class, 'mediable');

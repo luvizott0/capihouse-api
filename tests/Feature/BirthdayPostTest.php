@@ -8,7 +8,6 @@ use App\Jobs\GenerateUserBirthdayPostJob;
 use App\Models\BirthdayPost;
 use App\Models\Post;
 use App\Models\User;
-use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -18,7 +17,9 @@ class BirthdayPostTest extends TestCase
     use RefreshDatabase;
 
     protected User $rogeria;
+
     protected User $bento;
+
     protected User $maria;
 
     protected function setUp(): void

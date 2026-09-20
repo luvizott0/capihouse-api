@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\GroupMessageController;
 use App\Http\Controllers\Api\InterestController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
+use App\Http\Controllers\Api\PollController;
 use App\Http\Controllers\Api\PostCommentController;
 use App\Http\Controllers\Api\PostCommentLikeController;
 use App\Http\Controllers\Api\PostController;
@@ -62,6 +63,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/posts/{post}', [PostController::class, 'update']);
         Route::delete('/posts/{post}', [PostController::class, 'destroy']);
         Route::post('/posts/{post}/like', [PostLikeController::class, 'toggle']);
+        Route::post('/posts/{post}/poll/vote', [PollController::class, 'vote']);
         Route::post('/posts/{post}/comments', [PostCommentController::class, 'store']);
         Route::put('/comments/{comment}', [PostCommentController::class, 'update']);
         Route::delete('/comments/{comment}', [PostCommentController::class, 'destroy']);

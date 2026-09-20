@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\MediaType;
-use App\Events\NotificationSent;
 use App\Http\Controllers\Controller;
 use App\Models\AppNotification;
 use App\Models\Group;
 use App\Models\User;
+use App\Services\NotificationDispatcherService;
 use Illuminate\Http\Request;
 
 class GroupController extends Controller
@@ -302,7 +302,7 @@ class GroupController extends Controller
                     'status' => 'pending',
                 ]);
 
-                \App\Services\NotificationDispatcherService::send(
+                NotificationDispatcherService::send(
                     recipient: $targetId,
                     type: 'group_invite',
                     title: 'Convite para grupo',
@@ -314,7 +314,7 @@ class GroupController extends Controller
                         'inviter_name' => $sender->name,
                         'status' => 'pending',
                     ],
-                    url: '/groups/' . $group->id
+                    url: '/groups/'.$group->id
                 );
                 $invited[] = $targetId;
             }

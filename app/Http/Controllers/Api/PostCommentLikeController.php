@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Events\CommentLiked;
-use App\Events\NotificationSent;
 use App\Http\Controllers\Controller;
-use App\Models\AppNotification;
 use App\Models\PostComment;
 use App\Models\PostCommentLike;
+use App\Services\NotificationDispatcherService;
 
 class PostCommentLikeController extends Controller
 {
@@ -31,7 +30,7 @@ class PostCommentLikeController extends Controller
             if ($comment->user_id !== $userId) {
                 $liker = auth()->user();
                 $snippet = mb_strimwidth($comment->content, 0, 80, '...');
-                \App\Services\NotificationDispatcherService::send(
+                NotificationDispatcherService::send(
                     recipient: $comment->user_id,
                     type: 'comment_like',
                     title: 'Nova curtida no comentário',
@@ -44,7 +43,7 @@ class PostCommentLikeController extends Controller
                         'liker_username' => $liker->username,
                         'liker_avatar' => $liker->avatar_url,
                     ],
-                    url: '/posts/' . $comment->post_id
+                    url: '/posts/'.$comment->post_id
                 );
             }
         }

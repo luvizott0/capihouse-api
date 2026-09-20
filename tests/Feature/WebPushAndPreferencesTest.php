@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Enums\UserStatuses;
 use App\Models\User;
+use App\Notifications\GenericWebPushNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
-use NotificationChannels\WebPush\PushSubscription;
 use Tests\TestCase;
 
 class WebPushAndPreferencesTest extends TestCase
@@ -15,7 +16,7 @@ class WebPushAndPreferencesTest extends TestCase
     protected function createApprovedUser(array $attributes = []): User
     {
         return User::factory()->create(array_merge([
-            'status' => \App\Enums\UserStatuses::APPROVED,
+            'status' => UserStatuses::APPROVED,
         ], $attributes));
     }
 
@@ -134,6 +135,6 @@ class WebPushAndPreferencesTest extends TestCase
         $response = $this->actingAs($user)->postJson('/api/push/test');
         $response->assertStatus(200);
 
-        Notification::assertSentTo($user, \App\Notifications\GenericWebPushNotification::class);
+        Notification::assertSentTo($user, GenericWebPushNotification::class);
     }
 }

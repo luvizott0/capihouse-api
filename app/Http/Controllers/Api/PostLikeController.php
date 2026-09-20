@@ -2,12 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\NotificationSent;
 use App\Events\PostLiked;
 use App\Http\Controllers\Controller;
-use App\Models\AppNotification;
 use App\Models\Post;
 use App\Models\PostLike;
+use App\Services\NotificationDispatcherService;
 
 class PostLikeController extends Controller
 {
@@ -30,7 +29,7 @@ class PostLikeController extends Controller
 
             if ($post->user_id !== $userId) {
                 $liker = auth()->user();
-                \App\Services\NotificationDispatcherService::send(
+                NotificationDispatcherService::send(
                     recipient: $post->user_id,
                     type: 'post_like',
                     title: 'Nova curtida',
@@ -42,7 +41,7 @@ class PostLikeController extends Controller
                         'liker_username' => $liker->username,
                         'liker_avatar' => $liker->avatar_url,
                     ],
-                    url: '/posts/' . $post->id
+                    url: '/posts/'.$post->id
                 );
             }
         }

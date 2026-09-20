@@ -34,6 +34,8 @@ class PostController extends Controller
             'comments.parent.user:id,name,username',
             'comments.likes' => fn ($q) => $q->where('user_id', $userId),
             'likes' => fn ($q) => $q->where('user_id', $userId),
+            'poll.options',
+            'poll.votes' => fn ($q) => $q->where('user_id', $userId),
         ])
             ->withCount(['likes', 'comments']);
 
@@ -104,8 +106,9 @@ class PostController extends Controller
         $posts = $query->latest()->paginate(15);
 
         // Transform collection to append is_liked by current user
-        $posts->getCollection()->transform(function ($post) {
+        $posts->getCollection()->transform(function ($post) use ($userId) {
             $post->is_liked = $post->likes->isNotEmpty();
+            $this->formatPostPoll($post, $userId);
             if ($post->comments) {
                 $post->comments->transform(function ($comment) {
                     $comment->is_liked = $comment->likes ? $comment->likes->isNotEmpty() : false;
@@ -154,9 +157,12 @@ class PostController extends Controller
             'comments.parent.user:id,name,username',
             'comments.likes' => fn ($q) => $q->where('user_id', $userId),
             'likes' => fn ($q) => $q->where('user_id', $userId),
+            'poll.options',
+            'poll.votes' => fn ($q) => $q->where('user_id', $userId),
         ])->loadCount(['likes', 'comments']);
 
         $post->is_liked = $post->likes->isNotEmpty();
+        $this->formatPostPoll($post, $userId);
         if ($post->comments) {
             $post->comments->transform(function ($comment) {
                 $comment->is_liked = $comment->likes ? $comment->likes->isNotEmpty() : false;
@@ -179,6 +185,15 @@ class PostController extends Controller
             ], 413);
         }
 
+        $pollInput = $request->input('poll');
+        if (is_string($pollInput)) {
+            $decoded = json_decode($pollInput, true);
+            if (is_array($decoded)) {
+                $pollInput = $decoded;
+                $request->merge(['poll' => $pollInput]);
+            }
+        }
+
         $request->validate([
             'content' => 'nullable|string|max:2000',
             'group_id' => 'nullable|exists:groups,id',
@@ -189,6 +204,10 @@ class PostController extends Controller
             'hashtags.*' => 'string|max:50',
             'media' => 'nullable|array|max:5',
             'media.*' => 'file|mimes:jpg,jpeg,png,gif,webp,mp4,mov|max:20480',
+            'poll' => 'nullable|array',
+            'poll.question' => 'nullable|string|max:255',
+            'poll.options' => 'required_with:poll|array|min:2|max:5',
+            'poll.options.*' => 'required|string|max:100',
         ], [
             'content.max' => 'O texto da publicação pode ter no máximo 2000 caracteres.',
             'feeling_name.max' => 'O sentimento pode ter no máximo 15 caracteres.',
@@ -196,10 +215,15 @@ class PostController extends Controller
             'media.*.file' => 'O arquivo enviado é inválido.',
             'media.*.mimes' => 'Formato de mídia não suportado. Utilize imagens (JPG, PNG, GIF, WEBP) ou vídeos (MP4, MOV).',
             'media.*.max' => 'Cada arquivo de mídia pode ter no máximo 20MB.',
+            'poll.options.min' => 'A votação precisa ter pelo menos 2 opções.',
+            'poll.options.max' => 'A votação pode ter no máximo 5 opções.',
+            'poll.options.*.required' => 'As opções da votação não podem estar vazias.',
+            'poll.options.*.max' => 'Cada opção da votação pode ter no máximo 100 caracteres.',
         ]);
 
-        if (! $request->filled('content') && ! $request->hasFile('media')) {
-            return response()->json(['message' => 'O post precisa ter texto ou mídia.'], 422);
+        $hasPoll = $request->filled('poll.options') && count((array) $request->input('poll.options')) >= 2;
+        if (! $request->filled('content') && ! $request->hasFile('media') && ! $hasPoll) {
+            return response()->json(['message' => 'O post precisa ter texto, mídia ou votação.'], 422);
         }
 
         $groupId = $request->input('group_id');
@@ -225,6 +249,23 @@ class PostController extends Controller
             'event_id' => $eventId,
             'content' => $request->input('content'),
         ]);
+
+        // Poll
+        if ($hasPoll) {
+            $poll = $post->poll()->create([
+                'question' => $request->filled('poll.question') ? trim($request->input('poll.question')) : null,
+            ]);
+
+            foreach ($request->input('poll.options') as $index => $optText) {
+                $cleanText = trim((string) $optText);
+                if ($cleanText !== '') {
+                    $poll->options()->create([
+                        'text' => mb_substr($cleanText, 0, 100),
+                        'order' => $index,
+                    ]);
+                }
+            }
+        }
 
         // Feelings
         if ($request->filled('feeling_name')) {
@@ -266,8 +307,21 @@ class PostController extends Controller
         // Mentions
         MentionService::syncPostMentions($post, auth()->user());
 
-        $post->load(['user', 'group:id,name', 'event:id,name', 'media', 'feeling', 'hashtags', 'mentions:id,name,username,avatar_url', 'comments.user', 'likes']);
+        $post->load([
+            'user',
+            'group:id,name',
+            'event:id,name',
+            'media',
+            'feeling',
+            'hashtags',
+            'mentions:id,name,username,avatar_url',
+            'comments.user',
+            'likes',
+            'poll.options',
+            'poll.votes' => fn ($q) => $q->where('user_id', auth()->id()),
+        ]);
         $post->is_liked = false;
+        $this->formatPostPoll($post, auth()->id());
 
         // Broadcast event safely
         try {
@@ -293,8 +347,8 @@ class PostController extends Controller
             'hashtags.*' => 'string|max:50',
         ]);
 
-        if (! $request->filled('content') && ! $post->media()->exists()) {
-            return response()->json(['message' => 'O post precisa ter texto ou mídia.'], 422);
+        if (! $request->filled('content') && ! $post->media()->exists() && ! $post->poll()->exists()) {
+            return response()->json(['message' => 'O post precisa ter texto, mídia ou votação.'], 422);
         }
 
         $post->update([
@@ -338,8 +392,21 @@ class PostController extends Controller
         // Mentions
         MentionService::syncPostMentions($post, auth()->user());
 
-        $post->load(['user', 'group:id,name', 'event:id,name', 'media', 'feeling', 'hashtags', 'mentions:id,name,username,avatar_url', 'comments.user', 'likes']);
+        $post->load([
+            'user',
+            'group:id,name',
+            'event:id,name',
+            'media',
+            'feeling',
+            'hashtags',
+            'mentions:id,name,username,avatar_url',
+            'comments.user',
+            'likes',
+            'poll.options',
+            'poll.votes' => fn ($q) => $q->where('user_id', auth()->id()),
+        ]);
         $post->is_liked = $post->likes()->where('user_id', auth()->id())->exists();
+        $this->formatPostPoll($post, auth()->id());
 
         // Broadcast event safely
         try {
@@ -381,5 +448,54 @@ class PostController extends Controller
         }
 
         return response()->json(['message' => 'Post excluído com sucesso.']);
+    }
+
+    protected function formatPostPoll(Post $post, int $userId): void
+    {
+        if (! $post->relationLoaded('poll') || ! $post->poll) {
+            $post->unsetRelation('poll');
+            $post->setAttribute('poll', null);
+
+            return;
+        }
+
+        $poll = $post->poll;
+        $userVote = $poll->relationLoaded('votes') ? $poll->votes->first() : null;
+        $hasVoted = $userVote !== null;
+        $userVotedOptionId = $userVote?->poll_option_id;
+        $totalVotes = $poll->relationLoaded('options') ? (int) $poll->options->sum('votes_count') : 0;
+
+        $formattedOptions = $poll->options->map(function ($opt) use ($hasVoted, $totalVotes) {
+            $item = [
+                'id' => $opt->id,
+                'poll_id' => $opt->poll_id,
+                'text' => $opt->text,
+                'order' => $opt->order,
+            ];
+
+            if ($hasVoted) {
+                $votes = (int) $opt->votes_count;
+                $item['votes_count'] = $votes;
+                $item['percentage'] = $totalVotes > 0 ? round(($votes / $totalVotes) * 100, 1) : 0;
+            } else {
+                $item['votes_count'] = null;
+                $item['percentage'] = null;
+            }
+
+            return $item;
+        });
+
+        $formattedPoll = [
+            'id' => $poll->id,
+            'post_id' => $poll->post_id,
+            'question' => $poll->question,
+            'has_voted' => $hasVoted,
+            'user_voted_option_id' => $userVotedOptionId,
+            'total_votes' => $hasVoted ? $totalVotes : null,
+            'options' => $formattedOptions,
+        ];
+
+        $post->unsetRelation('poll');
+        $post->setAttribute('poll', $formattedPoll);
     }
 }
