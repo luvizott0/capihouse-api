@@ -53,6 +53,23 @@ class PollTest extends TestCase
         ]);
     }
 
+    public function test_can_create_post_with_poll_via_form_data()
+    {
+        $user = $this->createApprovedUser();
+
+        $res = $this->actingAs($user)->post('/api/posts', [
+            'content' => 'Post via form data',
+            'poll' => [
+                'question' => 'Enquete form data',
+                'options' => ['Opção 1', 'Opção 2'],
+            ],
+        ], ['Accept' => 'application/json']);
+
+        $res->assertStatus(201);
+        $res->assertJsonPath('poll.question', 'Enquete form data');
+        $this->assertDatabaseHas('polls', ['question' => 'Enquete form data']);
+    }
+
     public function test_can_create_post_with_only_poll_without_text()
     {
         $user = $this->createApprovedUser();
@@ -122,6 +139,11 @@ class PollTest extends TestCase
         $viewRes->assertJsonPath('poll.total_votes', null);
         $this->assertNull($viewRes->json('poll.options.0.votes_count'));
         $this->assertNull($viewRes->json('poll.options.0.percentage'));
+
+        $feedRes = $this->actingAs($viewer)->getJson('/api/posts');
+        $feedRes->assertStatus(200);
+        $this->assertNotNull($feedRes->json('data.0.poll'));
+        $feedRes->assertJsonPath('data.0.poll.has_voted', false);
     }
 
     public function test_voting_and_changing_vote()
