@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\PostCreated;
 use App\Models\Post;
 use App\Models\User;
 use Carbon\Carbon;
@@ -49,6 +50,9 @@ class LetterboxdSyncService
             foreach ($xml->channel->item as $item) {
                 // Tenta namespace padrão ou fallback
                 $nsLetterboxd = $item->children('https://letterboxd.com');
+                if (! isset($nsLetterboxd->filmTitle) || empty((string) $nsLetterboxd->filmTitle)) {
+                    $nsLetterboxd = $item->children('https://letterboxd.com/');
+                }
                 if (! isset($nsLetterboxd->filmTitle) || empty((string) $nsLetterboxd->filmTitle)) {
                     $nsLetterboxd = $item->children('https://boxd.it/');
                 }
@@ -116,7 +120,7 @@ class LetterboxdSyncService
                     ? Carbon::parse($watchedDate)->startOfDay()
                     : $pubDate;
 
-                Post::create([
+                $newPost = Post::create([
                     'user_id' => $user->id,
                     'category' => 'entertainment',
                     'entertainment_type' => 'movie',
@@ -137,6 +141,23 @@ class LetterboxdSyncService
                     'created_at' => $watchedAt,
                     'updated_at' => $pubDate,
                 ]);
+
+                try {
+                    $newPost->load([
+                        'user',
+                        'media',
+                        'comments.user',
+                        'comments.parent.user',
+                        'comments.mentions',
+                        'mentions',
+                    ]);
+                    $newPost->is_liked = false;
+                    $newPost->likes_count = 0;
+                    $newPost->comments_count = 0;
+                    broadcast(new PostCreated($newPost));
+                } catch (\Throwable $e) {
+                    report($e);
+                }
 
                 $newItemsCount++;
             }
