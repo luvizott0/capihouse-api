@@ -28,6 +28,7 @@ class SyncLetterboxdJob implements ShouldQueue
     {
         if (empty($this->user->letterboxd_username)) {
             Cache::forget("letterboxd_syncing_{$this->user->id}");
+
             return;
         }
 

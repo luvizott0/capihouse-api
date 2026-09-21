@@ -22,12 +22,16 @@ class Post extends Model
         'external_id',
         'metadata',
         'repost_of_id',
+        'watched_at',
+        'created_at',
+        'updated_at',
     ];
 
     protected function casts(): array
     {
         return [
             'metadata' => 'array',
+            'watched_at' => 'datetime',
         ];
     }
 

@@ -112,12 +112,17 @@ class LetterboxdSyncService
                     ? Carbon::parse((string) $item->pubDate)
                     : now();
 
+                $watchedAt = $watchedDate
+                    ? Carbon::parse($watchedDate)->startOfDay()
+                    : $pubDate;
+
                 Post::create([
                     'user_id' => $user->id,
                     'category' => 'entertainment',
                     'entertainment_type' => 'movie',
                     'external_source' => 'letterboxd',
                     'external_id' => $guid,
+                    'watched_at' => $watchedAt,
                     'content' => $reviewText,
                     'metadata' => [
                         'film_title' => $filmTitle,
@@ -129,7 +134,7 @@ class LetterboxdSyncService
                         'letterboxd_url' => $letterboxdUrl,
                         'review_text' => $reviewText,
                     ],
-                    'created_at' => $pubDate,
+                    'created_at' => $watchedAt,
                     'updated_at' => $pubDate,
                 ]);
 

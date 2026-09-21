@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class UserResource extends JsonResource
@@ -30,7 +31,7 @@ class UserResource extends JsonResource
             'spotify' => $this->spotify,
             'letterboxd_username' => $this->letterboxd_username,
             'letterboxd_last_synced_at' => $this->letterboxd_last_synced_at,
-            'letterboxd_is_syncing' => \Illuminate\Support\Facades\Cache::has("letterboxd_syncing_{$this->id}"),
+            'letterboxd_is_syncing' => Cache::has("letterboxd_syncing_{$this->id}"),
             'initials' => $this->initials(),
             'is_admin' => $this->isAdmin(),
             'is_online' => $isOnline,

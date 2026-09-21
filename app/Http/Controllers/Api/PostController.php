@@ -97,12 +97,17 @@ class PostController extends Controller
                     ->orWhereHas('hashtags', function ($hq) use ($search) {
                         $cleanTag = ltrim($search, '#');
                         $hq->where('name', 'like', "%{$cleanTag}%");
-                    });
+                    })
+                    ->orWhere('metadata->film_title', 'like', "%{$search}%");
             });
         }
 
         if ($request->filled('date')) {
-            $query->whereDate('created_at', $request->input('date'));
+            $filterDate = $request->input('date');
+            $query->where(function ($q) use ($filterDate) {
+                $q->whereDate('created_at', $filterDate)
+                    ->orWhereDate('watched_at', $filterDate);
+            });
         }
 
         if ($request->filled('user_id')) {
@@ -115,7 +120,11 @@ class PostController extends Controller
             });
         }
 
-        $posts = $query->latest()->paginate(15);
+        if ($request->input('category') === 'entertainment') {
+            $posts = $query->orderByRaw('COALESCE(watched_at, created_at) DESC')->orderByDesc('id')->paginate(15);
+        } else {
+            $posts = $query->latest()->paginate(15);
+        }
 
         // Transform collection to append is_liked by current user
         $posts->getCollection()->transform(function ($post) use ($userId) {

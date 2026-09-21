@@ -247,4 +247,109 @@ XML;
 
         $response->assertStatus(403);
     }
+
+    public function test_entertainment_posts_are_ordered_by_watched_date_descending()
+    {
+        $user1 = $this->createApprovedUser(['name' => 'Alice']);
+        $user2 = $this->createApprovedUser(['name' => 'Bob']);
+
+        // Bob sincronizou mais recentemente (created_at recente), mas assistiu em 2024
+        $bobMovie = Post::create([
+            'user_id' => $user2->id,
+            'category' => 'entertainment',
+            'entertainment_type' => 'movie',
+            'external_source' => 'letterboxd',
+            'external_id' => 'bob-movie-1',
+            'watched_at' => '2024-01-10 00:00:00',
+            'metadata' => ['film_title' => 'Old Bob Movie', 'watched_date' => '2024-01-10'],
+            'created_at' => '2026-09-20 20:00:00',
+        ]);
+
+        // Alice sincronizou antes, mas assistiu recentemente em 2026
+        $aliceMovie = Post::create([
+            'user_id' => $user1->id,
+            'category' => 'entertainment',
+            'entertainment_type' => 'movie',
+            'external_source' => 'letterboxd',
+            'external_id' => 'alice-movie-1',
+            'watched_at' => '2026-09-18 00:00:00',
+            'metadata' => ['film_title' => 'Recent Alice Movie', 'watched_date' => '2026-09-18'],
+            'created_at' => '2026-09-19 10:00:00',
+        ]);
+
+        $response = $this->actingAs($user1)->getJson('/api/posts?category=entertainment');
+        $response->assertStatus(200);
+
+        $postsData = $response->json('data');
+        $this->assertCount(2, $postsData);
+        // Alice assistiu em 2026-09-18, logo deve vir PRIMEIRO que o de Bob que assistiu em 2024-01-10
+        $this->assertEquals($aliceMovie->id, $postsData[0]['id']);
+        $this->assertEquals($bobMovie->id, $postsData[1]['id']);
+    }
+
+    public function test_entertainment_posts_can_be_filtered_by_search_query_matching_film_title()
+    {
+        $user = $this->createApprovedUser();
+
+        Post::create([
+            'user_id' => $user->id,
+            'category' => 'entertainment',
+            'entertainment_type' => 'movie',
+            'external_source' => 'letterboxd',
+            'external_id' => 'dune-1',
+            'metadata' => ['film_title' => 'Dune: Part Two'],
+        ]);
+
+        Post::create([
+            'user_id' => $user->id,
+            'category' => 'entertainment',
+            'entertainment_type' => 'movie',
+            'external_source' => 'letterboxd',
+            'external_id' => 'matrix-1',
+            'metadata' => ['film_title' => 'The Matrix'],
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/api/posts?category=entertainment&q=Dune');
+        $response->assertStatus(200);
+        $this->assertCount(1, $response->json('data'));
+        $this->assertEquals('Dune: Part Two', $response->json('data.0.metadata.film_title'));
+    }
+
+    public function test_entertainment_posts_can_be_filtered_by_watched_date_and_user_id()
+    {
+        $user1 = $this->createApprovedUser();
+        $user2 = $this->createApprovedUser();
+
+        Post::create([
+            'user_id' => $user1->id,
+            'category' => 'entertainment',
+            'entertainment_type' => 'movie',
+            'external_source' => 'letterboxd',
+            'external_id' => 'watch-today',
+            'watched_at' => '2026-09-20 00:00:00',
+            'metadata' => ['film_title' => 'Filme Hoje'],
+        ]);
+
+        Post::create([
+            'user_id' => $user2->id,
+            'category' => 'entertainment',
+            'entertainment_type' => 'movie',
+            'external_source' => 'letterboxd',
+            'external_id' => 'watch-yesterday',
+            'watched_at' => '2026-09-19 00:00:00',
+            'metadata' => ['film_title' => 'Filme Ontem'],
+        ]);
+
+        // Filtrar por data
+        $resDate = $this->actingAs($user1)->getJson('/api/posts?category=entertainment&date=2026-09-20');
+        $resDate->assertStatus(200);
+        $this->assertCount(1, $resDate->json('data'));
+        $this->assertEquals('Filme Hoje', $resDate->json('data.0.metadata.film_title'));
+
+        // Filtrar por usuário
+        $resUser = $this->actingAs($user1)->getJson("/api/posts?category=entertainment&user_id={$user2->id}");
+        $resUser->assertStatus(200);
+        $this->assertCount(1, $resUser->json('data'));
+        $this->assertEquals('Filme Ontem', $resUser->json('data.0.metadata.film_title'));
+    }
 }
