@@ -34,7 +34,17 @@ class GroupController extends Controller
             });
         }
 
-        if ($request->filled('date')) {
+        if ($request->filled('start_date') || $request->filled('end_date')) {
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [$startDate.' 00:00:00', $endDate.' 23:59:59']);
+            } elseif ($startDate) {
+                $query->where('created_at', '>=', $startDate.' 00:00:00');
+            } elseif ($endDate) {
+                $query->where('created_at', '<=', $endDate.' 23:59:59');
+            }
+        } elseif ($request->filled('date')) {
             $query->whereDate('created_at', $request->input('date'));
         }
 

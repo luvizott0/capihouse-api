@@ -102,7 +102,28 @@ class PostController extends Controller
             });
         }
 
-        if ($request->filled('date')) {
+        if ($request->filled('start_date') || $request->filled('end_date')) {
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+            $query->where(function ($q) use ($startDate, $endDate) {
+                if ($startDate && $endDate) {
+                    $q->where(function ($sub) use ($startDate, $endDate) {
+                        $sub->whereBetween('created_at', [$startDate.' 00:00:00', $endDate.' 23:59:59'])
+                            ->orWhereBetween('watched_at', [$startDate.' 00:00:00', $endDate.' 23:59:59']);
+                    });
+                } elseif ($startDate) {
+                    $q->where(function ($sub) use ($startDate) {
+                        $sub->where('created_at', '>=', $startDate.' 00:00:00')
+                            ->orWhere('watched_at', '>=', $startDate.' 00:00:00');
+                    });
+                } elseif ($endDate) {
+                    $q->where(function ($sub) use ($endDate) {
+                        $sub->where('created_at', '<=', $endDate.' 23:59:59')
+                            ->orWhere('watched_at', '<=', $endDate.' 23:59:59');
+                    });
+                }
+            });
+        } elseif ($request->filled('date')) {
             $filterDate = $request->input('date');
             $query->where(function ($q) use ($filterDate) {
                 $q->whereDate('created_at', $filterDate)

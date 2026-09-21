@@ -150,4 +150,75 @@ class SearchFilterTest extends TestCase
         $this->assertCount(1, $res->json('data'));
         $this->assertEquals($group1->id, $res->json('data.0.id'));
     }
+
+    public function test_filter_by_date_range_across_entities()
+    {
+        $user = $this->createApprovedUser(['name' => 'Carlos Lima', 'username' => 'carlos']);
+
+        // Create posts with different dates
+        $p1 = Post::create(['user_id' => $user->id, 'content' => 'Post de agosto']);
+        $p1->created_at = '2026-08-15 12:00:00';
+        $p1->save();
+
+        $p2 = Post::create(['user_id' => $user->id, 'content' => 'Post de setembro início']);
+        $p2->created_at = '2026-09-02 08:00:00';
+        $p2->save();
+
+        $p3 = Post::create(['user_id' => $user->id, 'content' => 'Post de setembro fim']);
+        $p3->created_at = '2026-09-28 20:00:00';
+        $p3->save();
+
+        // 1. Posts date range: both start and end
+        $res = $this->actingAs($user)->getJson('/api/posts?start_date=2026-09-01&end_date=2026-09-15');
+        $res->assertStatus(200);
+        $this->assertCount(1, $res->json('data'));
+        $this->assertEquals($p2->id, $res->json('data.0.id'));
+
+        // 2. Posts date range: only start_date
+        $res = $this->actingAs($user)->getJson('/api/posts?start_date=2026-09-20');
+        $res->assertStatus(200);
+        $this->assertCount(1, $res->json('data'));
+        $this->assertEquals($p3->id, $res->json('data.0.id'));
+
+        // 3. Posts date range: only end_date
+        $res = $this->actingAs($user)->getJson('/api/posts?end_date=2026-08-31');
+        $res->assertStatus(200);
+        $this->assertCount(1, $res->json('data'));
+        $this->assertEquals($p1->id, $res->json('data.0.id'));
+
+        // Events date range
+        $e1 = Event::create([
+            'user_id' => $user->id,
+            'name' => 'Meetup 1',
+            'description' => 'Desc',
+            'date' => '2026-10-05 14:00:00',
+        ]);
+        $e2 = Event::create([
+            'user_id' => $user->id,
+            'name' => 'Meetup 2',
+            'description' => 'Desc',
+            'date' => '2026-10-20 18:00:00',
+        ]);
+
+        $res = $this->actingAs($user)->getJson('/api/events?start_date=2026-10-01&end_date=2026-10-10');
+        $res->assertStatus(200);
+        $this->assertCount(1, $res->json('data'));
+        $this->assertEquals($e1->id, $res->json('data.0.id'));
+
+        // Groups date range
+        $g1 = Group::create(['name' => 'Grupo Antigo', 'description' => 'D', 'creator_id' => $user->id]);
+        $g1->created_at = '2026-07-01 10:00:00';
+        $g1->save();
+        $g1->members()->attach($user->id, ['role' => 'owner', 'status' => 'accepted']);
+
+        $g2 = Group::create(['name' => 'Grupo Novo', 'description' => 'D', 'creator_id' => $user->id]);
+        $g2->created_at = '2026-09-10 10:00:00';
+        $g2->save();
+        $g2->members()->attach($user->id, ['role' => 'owner', 'status' => 'accepted']);
+
+        $res = $this->actingAs($user)->getJson('/api/groups?start_date=2026-09-01&end_date=2026-09-30');
+        $res->assertStatus(200);
+        $this->assertCount(1, $res->json('data'));
+        $this->assertEquals($g2->id, $res->json('data.0.id'));
+    }
 }
