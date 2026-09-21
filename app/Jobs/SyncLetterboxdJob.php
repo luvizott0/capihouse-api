@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class SyncLetterboxdJob implements ShouldQueue
@@ -26,6 +27,7 @@ class SyncLetterboxdJob implements ShouldQueue
     public function handle(LetterboxdSyncService $syncService): void
     {
         if (empty($this->user->letterboxd_username)) {
+            Cache::forget("letterboxd_syncing_{$this->user->id}");
             return;
         }
 
@@ -34,6 +36,8 @@ class SyncLetterboxdJob implements ShouldQueue
             Log::info("Sincronização Letterboxd concluída para {$this->user->username}: {$imported} novos itens.");
         } catch (\Throwable $e) {
             Log::error("Falha no Job de sincronização Letterboxd para {$this->user->username}: {$e->getMessage()}");
+        } finally {
+            Cache::forget("letterboxd_syncing_{$this->user->id}");
         }
     }
 }

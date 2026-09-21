@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
 use App\Jobs\SyncLetterboxdJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class LetterboxdController extends Controller
 {
@@ -28,12 +30,14 @@ class LetterboxdController extends Controller
             'letterboxd_username' => $username,
         ]);
 
+        Cache::put("letterboxd_syncing_{$user->id}", true, now()->addMinutes(5));
+
         // Dispara sincronização em segundo plano
         SyncLetterboxdJob::dispatch($user);
 
         return response()->json([
             'message' => "Conta @{$username} do Letterboxd conectada! A sincronização inicial foi iniciada em segundo plano.",
-            'user' => $user->fresh(),
+            'user' => new UserResource($user->fresh()),
         ]);
     }
 
@@ -48,9 +52,11 @@ class LetterboxdController extends Controller
             'letterboxd_last_synced_at' => null,
         ]);
 
+        Cache::forget("letterboxd_syncing_{$user->id}");
+
         return response()->json([
             'message' => 'Conta do Letterboxd desconectada com sucesso.',
-            'user' => $user->fresh(),
+            'user' => new UserResource($user->fresh()),
         ]);
     }
 
@@ -67,10 +73,13 @@ class LetterboxdController extends Controller
             ], 422);
         }
 
+        Cache::put("letterboxd_syncing_{$user->id}", true, now()->addMinutes(5));
+
         SyncLetterboxdJob::dispatch($user);
 
         return response()->json([
             'message' => 'Sincronização iniciada em segundo plano! Suas novas avaliações aparecerão em breve.',
+            'user' => new UserResource($user->fresh()),
         ]);
     }
 }
