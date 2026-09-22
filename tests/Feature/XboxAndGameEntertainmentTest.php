@@ -213,4 +213,39 @@ class XboxAndGameEntertainmentTest extends TestCase
         $this->assertEquals('Elden Ring', $data[0]['metadata']['game_title']);
         $this->assertEquals('game', $data[0]['entertainment_type']);
     }
+
+    public function test_posts_can_be_searched_by_game_title_in_entertainment_and_feed_reposts()
+    {
+        $user = $this->createApprovedUser();
+
+        // Game post in entertainment
+        $gamePost = Post::create([
+            'user_id' => $user->id,
+            'category' => 'entertainment',
+            'entertainment_type' => 'game',
+            'external_source' => 'xbox',
+            'content' => null,
+            'metadata' => ['game_title' => 'LEGO Marvel Super Heroes', 'platform' => 'Xbox'],
+        ]);
+
+        // Repost in feed
+        $repost = Post::create([
+            'user_id' => $user->id,
+            'category' => 'feed',
+            'repost_of_id' => $gamePost->id,
+            'content' => 'Comentário sobre o jogo',
+        ]);
+
+        // 1. Busca na aba de entretenimento
+        $entRes = $this->actingAs($user)->getJson('/api/posts?category=entertainment&entertainment_type=game&q=lego');
+        $entRes->assertStatus(200);
+        $this->assertCount(1, $entRes->json('data'));
+        $this->assertEquals('LEGO Marvel Super Heroes', $entRes->json('data.0.metadata.game_title'));
+
+        // 2. Busca no feed principal (deve encontrar o repost pelo título do jogo repostado)
+        $feedRes = $this->actingAs($user)->getJson('/api/posts?q=lego');
+        $feedRes->assertStatus(200);
+        $this->assertCount(1, $feedRes->json('data'));
+        $this->assertEquals($repost->id, $feedRes->json('data.0.id'));
+    }
 }

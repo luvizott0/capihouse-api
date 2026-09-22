@@ -98,7 +98,15 @@ class PostController extends Controller
                         $cleanTag = ltrim($search, '#');
                         $hq->where('name', 'like', "%{$cleanTag}%");
                     })
-                    ->orWhere('metadata->film_title', 'like', "%{$search}%");
+                    ->orWhere('metadata->film_title', 'like', "%{$search}%")
+                    ->orWhere('metadata->game_title', 'like', "%{$search}%")
+                    ->orWhere('metadata->platform', 'like', "%{$search}%")
+                    ->orWhereHas('repostedPost', function ($rq) use ($search) {
+                        $rq->where('content', 'like', "%{$search}%")
+                            ->orWhere('metadata->film_title', 'like', "%{$search}%")
+                            ->orWhere('metadata->game_title', 'like', "%{$search}%")
+                            ->orWhere('metadata->platform', 'like', "%{$search}%");
+                    });
             });
         }
 
