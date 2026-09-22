@@ -244,10 +244,8 @@ class XboxSyncService
                         $importedCount++;
                     }
                 } else {
-                    // Criação de novo post
-                    $celebrationContent = $isMastered
-                        ? "🏆 100% Miletado! Conquistei todos os {$totalGamerscore}G e completei todas as conquistas em {$titleName}!"
-                        : null;
+                    // Posts sincronizados do Xbox não geram texto pré-fabricado
+                    $celebrationContent = null;
 
                     $newPost = Post::create([
                         'user_id' => $user->id,

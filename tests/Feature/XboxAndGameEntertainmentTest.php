@@ -138,7 +138,7 @@ class XboxAndGameEntertainmentTest extends TestCase
         $this->assertEquals('game', $haloPost->entertainment_type);
         $this->assertEquals('Halo Infinite', $haloPost->metadata['game_title']);
         $this->assertEquals('mastered', $haloPost->metadata['game_status']);
-        $this->assertStringContainsString('100% Miletado', $haloPost->content);
+        $this->assertNull($haloPost->content);
 
         // Forza deve estar como 'playing'
         $forzaPost = Post::where('user_id', $user->id)
