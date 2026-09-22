@@ -8,13 +8,14 @@ use Illuminate\Console\Command;
 
 class SyncXboxCommand extends Command
 {
-    protected $signature = 'xbox:sync {--user= : ID ou username de usuário específico}';
+    protected $signature = 'xbox:sync {--user= : ID ou username de usuário específico} {--now : Executa a sincronização imediatamente de forma síncrona sem fila}';
 
     protected $description = 'Sincroniza atividades e conquistas de usuários conectados ao Xbox Live';
 
     public function handle(): int
     {
         $specificUser = $this->option('user');
+        $runNow = (bool) $this->option('now');
 
         $query = User::whereNotNull('xbox_gamertag')
             ->where('xbox_gamertag', '!=', '')
@@ -35,14 +36,19 @@ class SyncXboxCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info("Enfileirando sincronização do Xbox para {$users->count()} usuário(s)...");
+        $this->info(($runNow ? 'Iniciando sincronização imediata' : 'Enfileirando sincronização') . " do Xbox para {$users->count()} usuário(s)...");
 
         foreach ($users as $user) {
-            SyncXboxJob::dispatch($user);
-            $this->line(" - Agendado para: {$user->name} ({$user->xbox_gamertag})");
+            if ($runNow) {
+                SyncXboxJob::dispatchSync($user);
+                $this->line(" - Sincronizado agora: {$user->name} ({$user->xbox_gamertag})");
+            } else {
+                SyncXboxJob::dispatch($user);
+                $this->line(" - Agendado para: {$user->name} ({$user->xbox_gamertag})");
+            }
         }
 
-        $this->info('Todos os jobs de sincronização do Xbox foram enfileirados com sucesso.');
+        $this->info('Processo de sincronização do Xbox concluído.');
 
         return Command::SUCCESS;
     }

@@ -31,13 +31,19 @@ class XboxController extends Controller
             'xbox_xuid' => null, // Será preenchido na sincronização
         ]);
 
-        Cache::put("xbox_syncing_{$user->id}", true, now()->addMinutes(5));
+        $hasApiKey = ! empty(config('services.openxbl.api_key'));
 
-        // Dispara sincronização em segundo plano
-        SyncXboxJob::dispatch($user);
+        if ($hasApiKey) {
+            Cache::put("xbox_syncing_{$user->id}", true, now()->addMinutes(5));
+            // Dispara sincronização em segundo plano
+            SyncXboxJob::dispatch($user);
+            $message = "Gamertag '{$gamertag}' conectada! A sincronização de jogos foi iniciada em segundo plano.";
+        } else {
+            $message = "Gamertag '{$gamertag}' conectada! Nota: Para sincronizar seus jogos automaticamente, adicione a chave OPENXBL_API_KEY no arquivo .env (obtenha gratuitamente em https://xbl.io).";
+        }
 
         return response()->json([
-            'message' => "Gamertag '{$gamertag}' conectada! A sincronização de jogos foi iniciada em segundo plano.",
+            'message' => $message,
             'user' => new UserResource($user->fresh()),
         ]);
     }
@@ -72,6 +78,12 @@ class XboxController extends Controller
         if (empty($user->xbox_gamertag)) {
             return response()->json([
                 'message' => 'Nenhuma conta do Xbox vinculada ao seu perfil.',
+            ], 422);
+        }
+
+        if (empty(config('services.openxbl.api_key'))) {
+            return response()->json([
+                'message' => 'A sincronização requer a configuração de OPENXBL_API_KEY no arquivo .env do servidor. Obtenha uma chave gratuita em https://xbl.io.',
             ], 422);
         }
 

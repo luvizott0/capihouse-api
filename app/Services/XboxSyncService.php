@@ -27,10 +27,9 @@ class XboxSyncService
         $apiKey = config('services.openxbl.api_key');
 
         if (empty($apiKey)) {
-            Log::info("OpenXBL API Key não configurada. Pulei sincronização automática da Xbox Live para o usuário #{$user->id} ({$gamertag}).");
-            $user->update(['xbox_last_synced_at' => now()]);
+            Log::warning("OpenXBL API Key não configurada. Não foi possível sincronizar Xbox Live para o usuário #{$user->id} ({$gamertag}).");
 
-            return 0;
+            throw new Exception("A chave OPENXBL_API_KEY não está configurada no servidor (.env). Obtenha sua chave gratuita em https://xbl.io para sincronizar os dados da Xbox Live.");
         }
 
         try {
@@ -45,38 +44,54 @@ class XboxSyncService
                 ]);
 
                 if ($profileRes->successful()) {
-                    $profileData = $profileRes->json();
+                    $rawProfile = $profileRes->json();
+                    $profileData = $rawProfile['content'] ?? $rawProfile;
                     $xuid = $profileData['profileUsers'][0]['id']
                         ?? $profileData['xuid']
                         ?? $profileData['id']
                         ?? null;
+                }
 
-                    if ($xuid) {
-                        $user->update(['xbox_xuid' => (string) $xuid]);
+                // Fallback para /v2/account se for a conta autenticada da própria chave
+                if (empty($xuid)) {
+                    $accRes = Http::withHeaders([
+                        'X-Authorization' => $apiKey,
+                        'Accept' => 'application/json',
+                    ])->get('https://api.xbl.io/v2/account');
+
+                    if ($accRes->successful()) {
+                        $rawAcc = $accRes->json();
+                        $accData = $rawAcc['content'] ?? $rawAcc;
+                        $xuid = $accData['profileUsers'][0]['id'] ?? null;
                     }
-                } elseif ($profileRes->status() === 404) {
-                    throw new Exception("Gamertag '{$gamertag}' não foi encontrada na Xbox Live.");
+                }
+
+                if ($xuid) {
+                    $user->update(['xbox_xuid' => (string) $xuid]);
+                } else {
+                    if ($profileRes->status() === 404) {
+                        throw new Exception("Gamertag '{$gamertag}' não foi encontrada na Xbox Live.");
+                    }
+                    throw new Exception("Não foi possível localizar o identificador XUID da Gamertag '{$gamertag}' na Xbox Live.");
                 }
             }
 
-            // 2. Buscar títulos recentes / conquistas do jogador
+            // 2. Buscar títulos do jogador via OpenXBL v2
             $titlesEndpoint = $xuid
-                ? "https://api.xbl.io/v2/achievements/player/{$xuid}"
-                : 'https://api.xbl.io/v2/player/titleHub';
+                ? "https://api.xbl.io/v2/titles/{$xuid}"
+                : 'https://api.xbl.io/v2/titles';
 
             $response = Http::withHeaders([
                 'X-Authorization' => $apiKey,
                 'Accept' => 'application/json',
             ])->get($titlesEndpoint);
 
-            if (! $response->successful()) {
-                // Fallback para titleHub se o endpoint de achievements falhar
-                if ($xuid) {
-                    $response = Http::withHeaders([
-                        'X-Authorization' => $apiKey,
-                        'Accept' => 'application/json',
-                    ])->get('https://api.xbl.io/v2/player/titleHub');
-                }
+            if (! $response->successful() && $xuid) {
+                // Fallback para /v2/achievements/player/{xuid}
+                $response = Http::withHeaders([
+                    'X-Authorization' => $apiKey,
+                    'Accept' => 'application/json',
+                ])->get("https://api.xbl.io/v2/achievements/player/{$xuid}");
             }
 
             if (! $response->successful()) {
@@ -85,18 +100,56 @@ class XboxSyncService
                 return 0;
             }
 
-            $data = $response->json();
-            $titles = $data['titles'] ?? $data['xbl_titles'] ?? [];
+            $rawTitles = $response->json();
+            $content = $rawTitles['content'] ?? $rawTitles;
+            $allTitles = $content['titles'] ?? $content['xbl_titles'] ?? [];
 
-            if (empty($titles) || ! is_array($titles)) {
+            if (empty($allTitles) || ! is_array($allTitles)) {
                 $user->update(['xbox_last_synced_at' => now()]);
 
                 return 0;
             }
 
+            // Filtrar apenas jogos válidos
+            $gameTitles = array_filter($allTitles, function ($item) {
+                $titleName = trim((string) ($item['name'] ?? $item['titleName'] ?? ''));
+                $titleId = (string) ($item['titleId'] ?? $item['id'] ?? '');
+                $type = $item['type'] ?? '';
+
+                return ! empty($titleId) && ! empty($titleName) && ($type === 'Game' || ! empty($item['achievement']));
+            });
+
+            // Ordenar por data da última jogatina decrescente
+            usort($gameTitles, function ($a, $b) {
+                $dateA = $a['titleHistory']['lastTimePlayed'] ?? $a['lastUnlock'] ?? $a['lastPlayed'] ?? '';
+                $dateB = $b['titleHistory']['lastTimePlayed'] ?? $b['lastUnlock'] ?? $b['lastPlayed'] ?? '';
+
+                return strcmp($dateB, $dateA);
+            });
+
+            // Selecionar os 25 jogos mais recentes + todos os jogos 100% miletados
+            $recentTitles = array_slice($gameTitles, 0, 25);
+            $masteredTitles = array_filter($gameTitles, function ($item) {
+                $achievementData = $item['achievement'] ?? $item['achievements'] ?? [];
+                $currentGamerscore = (int) ($achievementData['currentGamerscore'] ?? $item['currentGamerscore'] ?? 0);
+                $totalGamerscore = (int) ($achievementData['totalGamerscore'] ?? $item['totalGamerscore'] ?? 0);
+                $progressPct = (float) ($achievementData['progressPercentage'] ?? $item['progressPercentage'] ?? 0);
+
+                return $progressPct >= 100 || ($currentGamerscore >= $totalGamerscore && $totalGamerscore > 0);
+            });
+
+            // Unir sem duplicatas por titleId
+            $selectedTitlesMap = [];
+            foreach (array_merge($recentTitles, $masteredTitles) as $t) {
+                $tId = (string) ($t['titleId'] ?? $t['id'] ?? '');
+                if ($tId && ! isset($selectedTitlesMap[$tId])) {
+                    $selectedTitlesMap[$tId] = $t;
+                }
+            }
+
             $importedCount = 0;
 
-            foreach ($titles as $item) {
+            foreach ($selectedTitlesMap as $item) {
                 $titleId = (string) ($item['titleId'] ?? $item['id'] ?? '');
                 $titleName = (string) ($item['name'] ?? $item['titleName'] ?? '');
 
@@ -122,6 +175,21 @@ class XboxSyncService
                     }
                 }
 
+                // Plataforma
+                $platform = 'Xbox';
+                if (! empty($item['devices']) && is_array($item['devices'])) {
+                    $deviceLabels = array_map(function ($d) {
+                        return match ($d) {
+                            'XboxSeries' => 'Xbox Series X|S',
+                            'XboxOne' => 'Xbox One',
+                            'Xbox360' => 'Xbox 360',
+                            'PC' => 'PC',
+                            default => (string) $d,
+                        };
+                    }, $item['devices']);
+                    $platform = implode(', ', $deviceLabels);
+                }
+
                 // Estatísticas de conquistas e Gamerscore
                 $achievementData = $item['achievement'] ?? $item['achievements'] ?? [];
                 $currentAchievements = (int) ($achievementData['currentAchievements'] ?? $achievementData['earned'] ?? $item['earnedAchievements'] ?? 0);
@@ -138,7 +206,11 @@ class XboxSyncService
                 $gameStatus = $isMastered ? 'mastered' : 'playing';
 
                 // Data da última atividade
-                $lastUnlockedStr = $item['lastUnlock'] ?? $item['lastPlayed'] ?? $item['lastModified'] ?? null;
+                $lastUnlockedStr = $item['titleHistory']['lastTimePlayed']
+                    ?? $item['lastUnlock']
+                    ?? $item['lastPlayed']
+                    ?? $item['lastModified']
+                    ?? null;
                 $playedAt = $lastUnlockedStr ? Carbon::parse($lastUnlockedStr) : now();
 
                 $externalId = "xbox-{$user->id}-{$titleId}";
@@ -149,7 +221,7 @@ class XboxSyncService
 
                 $metadata = [
                     'game_title' => $titleName,
-                    'platform' => 'Xbox',
+                    'platform' => $platform,
                     'box_art_url' => $boxArtUrl,
                     'game_status' => $gameStatus,
                     'gamerscore' => $currentGamerscore,

@@ -119,6 +119,7 @@ class XboxAndGameEntertainmentTest extends TestCase
         ];
 
         Http::fake([
+            'https://api.xbl.io/v2/titles/*' => Http::response(['content' => $fakeTitlesResponse], 200),
             'https://api.xbl.io/v2/achievements/player/*' => Http::response($fakeTitlesResponse, 200),
         ]);
 
