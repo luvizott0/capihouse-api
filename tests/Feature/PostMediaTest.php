@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\UserRoles;
 use App\Enums\UserStatuses;
+use App\Models\Media;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -106,5 +107,136 @@ class PostMediaTest extends TestCase
         $res->assertJson([
             'message' => 'O tamanho total dos arquivos enviados ultrapassou o limite máximo aceito pelo servidor. Reduza o tamanho ou a quantidade das imagens.',
         ]);
+    }
+
+    public function test_post_update_can_add_images()
+    {
+        Storage::fake('public');
+        $user = $this->createApprovedUser();
+
+        $createRes = $this->actingAs($user)->post('/api/posts', [
+            'content' => 'Post original sem foto',
+        ], ['Accept' => 'application/json']);
+
+        $postId = $createRes->json('id');
+
+        $updateRes = $this->actingAs($user)->post("/api/posts/{$postId}", [
+            '_method' => 'PUT',
+            'content' => 'Post atualizado com foto',
+            'media' => [UploadedFile::fake()->image('nova_foto.jpg', 400, 400)],
+        ], ['Accept' => 'application/json']);
+
+        $updateRes->assertStatus(200);
+        $this->assertCount(1, $updateRes->json('media'));
+        $this->assertEquals('Post atualizado com foto', $updateRes->json('content'));
+    }
+
+    public function test_post_update_can_remove_existing_image_and_deletes_from_storage()
+    {
+        $disk = config('filesystems.default', 'public');
+        Storage::fake($disk);
+        $user = $this->createApprovedUser();
+
+        $createRes = $this->actingAs($user)->post('/api/posts', [
+            'content' => 'Post com foto inicial',
+            'media' => [UploadedFile::fake()->image('foto_remover.jpg', 400, 400)],
+        ], ['Accept' => 'application/json']);
+
+        $postId = $createRes->json('id');
+        $mediaId = $createRes->json('media.0.id');
+        $media = Media::find($mediaId);
+        $rawPath = $media->getRawOriginal('path');
+
+        $this->assertTrue(Storage::disk($disk)->exists($rawPath));
+
+        $updateRes = $this->actingAs($user)->post("/api/posts/{$postId}", [
+            '_method' => 'PUT',
+            'content' => 'Post agora sem foto',
+            'remove_media_ids' => [$mediaId],
+        ], ['Accept' => 'application/json']);
+
+        $updateRes->assertStatus(200);
+        $this->assertCount(0, $updateRes->json('media'));
+        $this->assertDatabaseMissing('media', ['id' => $mediaId]);
+        $this->assertFalse(Storage::disk($disk)->exists($rawPath));
+    }
+
+    public function test_post_update_can_replace_images()
+    {
+        Storage::fake('public');
+        $user = $this->createApprovedUser();
+
+        $createRes = $this->actingAs($user)->post('/api/posts', [
+            'content' => 'Post original com 1 foto',
+            'media' => [UploadedFile::fake()->image('antiga.jpg', 400, 400)],
+        ], ['Accept' => 'application/json']);
+
+        $postId = $createRes->json('id');
+        $oldMediaId = $createRes->json('media.0.id');
+
+        $updateRes = $this->actingAs($user)->post("/api/posts/{$postId}", [
+            '_method' => 'PUT',
+            'content' => 'Post com foto trocada',
+            'remove_media_ids' => [$oldMediaId],
+            'media' => [UploadedFile::fake()->image('nova.png', 400, 400)],
+        ], ['Accept' => 'application/json']);
+
+        $updateRes->assertStatus(200);
+        $this->assertCount(1, $updateRes->json('media'));
+        $this->assertNotEquals($oldMediaId, $updateRes->json('media.0.id'));
+        $this->assertDatabaseMissing('media', ['id' => $oldMediaId]);
+    }
+
+    public function test_post_update_rejects_exceeding_total_5_images()
+    {
+        Storage::fake('public');
+        $user = $this->createApprovedUser();
+
+        $createRes = $this->actingAs($user)->post('/api/posts', [
+            'content' => 'Post com 3 fotos',
+            'media' => [
+                UploadedFile::fake()->image('f1.jpg'),
+                UploadedFile::fake()->image('f2.jpg'),
+                UploadedFile::fake()->image('f3.jpg'),
+            ],
+        ], ['Accept' => 'application/json']);
+
+        $postId = $createRes->json('id');
+
+        // Tentar adicionar mais 3 fotos (total seria 6 > 5)
+        $updateRes = $this->actingAs($user)->post("/api/posts/{$postId}", [
+            '_method' => 'PUT',
+            'media' => [
+                UploadedFile::fake()->image('f4.jpg'),
+                UploadedFile::fake()->image('f5.jpg'),
+                UploadedFile::fake()->image('f6.jpg'),
+            ],
+        ], ['Accept' => 'application/json']);
+
+        $updateRes->assertStatus(422);
+        $this->assertEquals('Você pode anexar no máximo 5 arquivos de mídia.', $updateRes->json('message'));
+    }
+
+    public function test_post_update_rejects_removing_all_media_if_no_content()
+    {
+        Storage::fake('public');
+        $user = $this->createApprovedUser();
+
+        $createRes = $this->actingAs($user)->post('/api/posts', [
+            'content' => '',
+            'media' => [UploadedFile::fake()->image('foto_unica.jpg')],
+        ], ['Accept' => 'application/json']);
+
+        $postId = $createRes->json('id');
+        $mediaId = $createRes->json('media.0.id');
+
+        $updateRes = $this->actingAs($user)->post("/api/posts/{$postId}", [
+            '_method' => 'PUT',
+            'content' => '',
+            'remove_media_ids' => [$mediaId],
+        ], ['Accept' => 'application/json']);
+
+        $updateRes->assertStatus(422);
+        $this->assertEquals('O post precisa ter texto, mídia ou votação.', $updateRes->json('message'));
     }
 }

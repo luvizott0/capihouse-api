@@ -71,7 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/posts', [PostController::class, 'index']);
         Route::get('/posts/{post}', [PostController::class, 'show']);
         Route::post('/posts', [PostController::class, 'store']);
-        Route::put('/posts/{post}', [PostController::class, 'update']);
+        Route::match(['put', 'patch', 'post'], '/posts/{post}', [PostController::class, 'update']);
         Route::delete('/posts/{post}', [PostController::class, 'destroy']);
         Route::post('/posts/{post}/like', [PostLikeController::class, 'toggle']);
         Route::post('/posts/{post}/poll/vote', [PollController::class, 'vote']);

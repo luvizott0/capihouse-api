@@ -408,21 +408,95 @@ class PostController extends Controller
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
+        // Verificação defensiva de estouro de post_max_size
+        $contentLength = (int) ($request->server('CONTENT_LENGTH') ?? 0);
+        if ($contentLength > 0 && empty($request->all()) && empty($request->allFiles())) {
+            return response()->json([
+                'message' => 'O tamanho total dos arquivos enviados ultrapassou o limite máximo aceito pelo servidor. Reduza o tamanho ou a quantidade das imagens.',
+            ], 413);
+        }
+
+        $removeMediaIds = $request->input('remove_media_ids', []);
+        if (is_string($removeMediaIds)) {
+            $decoded = json_decode($removeMediaIds, true);
+            if (is_array($decoded)) {
+                $removeMediaIds = $decoded;
+            } elseif ($removeMediaIds !== '') {
+                $removeMediaIds = [$removeMediaIds];
+            } else {
+                $removeMediaIds = [];
+            }
+        }
+        $removeMediaIds = array_map('intval', (array) $removeMediaIds);
+
         $request->validate([
             'content' => 'nullable|string|max:2000',
             'feeling_name' => 'nullable|string|max:15',
             'feeling_emoji' => 'nullable|string|max:32',
             'hashtags' => 'nullable|array',
             'hashtags.*' => 'string|max:50',
+            'remove_media_ids' => 'nullable|array',
+            'remove_media_ids.*' => 'integer',
+            'media' => 'nullable|array|max:5',
+            'media.*' => 'file|mimes:jpg,jpeg,png,gif,webp,mp4,mov|max:20480',
+        ], [
+            'content.max' => 'O texto da publicação pode ter no máximo 2000 caracteres.',
+            'feeling_name.max' => 'O sentimento pode ter no máximo 15 caracteres.',
+            'media.max' => 'Você pode anexar no máximo 5 arquivos de mídia.',
+            'media.*.file' => 'O arquivo enviado é inválido.',
+            'media.*.mimes' => 'Formato de mídia não suportado. Utilize imagens (JPG, PNG, GIF, WEBP) ou vídeos (MP4, MOV).',
+            'media.*.max' => 'Cada arquivo de mídia pode ter no máximo 20MB.',
         ]);
 
-        if (! $request->filled('content') && ! $post->media()->exists() && ! $post->poll()->exists() && ! $post->repost_of_id) {
+        $remainingMediaCount = $post->media()->whereNotIn('id', $removeMediaIds)->count();
+        $newMediaFiles = $request->file('media', []);
+        $newMediaCount = is_array($newMediaFiles) ? count($newMediaFiles) : ($newMediaFiles ? 1 : 0);
+
+        if (($remainingMediaCount + $newMediaCount) > 5) {
+            return response()->json([
+                'message' => 'Você pode anexar no máximo 5 arquivos de mídia.',
+                'errors' => [
+                    'media' => ['Você pode anexar no máximo 5 arquivos de mídia.'],
+                ],
+            ], 422);
+        }
+
+        $finalMediaCount = $remainingMediaCount + $newMediaCount;
+        $hasPoll = $post->poll()->exists();
+        $isRepost = ! empty($post->repost_of_id);
+        $hasContent = $request->filled('content');
+
+        if (! $hasContent && $finalMediaCount === 0 && ! $hasPoll && ! $isRepost) {
             return response()->json(['message' => 'O post precisa ter texto, mídia ou votação.'], 422);
         }
 
         $post->update([
             'content' => $request->input('content'),
         ]);
+
+        // Remove media
+        if (! empty($removeMediaIds)) {
+            $mediaToDelete = $post->media()->whereIn('id', $removeMediaIds)->get();
+            foreach ($mediaToDelete as $media) {
+                $media->delete();
+            }
+        }
+
+        // Add new media
+        if ($request->hasFile('media')) {
+            $disk = config('filesystems.default', 'public');
+            foreach ($request->file('media') as $file) {
+                $mime = $file->getMimeType();
+                $type = str_starts_with($mime, 'video/') ? MediaType::VIDEO : MediaType::IMAGE;
+                $path = ImageOptimizerService::storeOptimized($file, "posts/{$post->id}", $disk);
+
+                $post->media()->create([
+                    'path' => $path,
+                    'type' => $type,
+                    'collection_name' => 'post_media',
+                ]);
+            }
+        }
 
         // Feelings
         if ($request->filled('feeling_name')) {
@@ -446,7 +520,9 @@ class PostController extends Controller
         }
 
         // Hashtags
-        if ($request->has('hashtags')) {
+        if ($request->boolean('clear_hashtags')) {
+            $post->hashtags()->sync([]);
+        } elseif ($request->has('hashtags')) {
             $hashtagIds = [];
             foreach ($request->input('hashtags') as $tagName) {
                 $cleanName = ltrim(trim($tagName), '#');
