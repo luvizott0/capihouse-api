@@ -37,13 +37,10 @@ class XboxController extends Controller
             Cache::put("xbox_syncing_{$user->id}", true, now()->addMinutes(5));
             // Dispara sincronização em segundo plano
             SyncXboxJob::dispatch($user);
-            $message = "Gamertag '{$gamertag}' conectada! A sincronização de jogos foi iniciada em segundo plano.";
-        } else {
-            $message = "Gamertag '{$gamertag}' conectada! Nota: Para sincronizar seus jogos automaticamente, adicione a chave OPENXBL_API_KEY no arquivo .env (obtenha gratuitamente em https://xbl.io).";
         }
 
         return response()->json([
-            'message' => $message,
+            'message' => "Gamertag '{$gamertag}' conectada com sucesso!",
             'user' => new UserResource($user->fresh()),
         ]);
     }
@@ -83,7 +80,7 @@ class XboxController extends Controller
 
         if (empty(config('services.openxbl.api_key'))) {
             return response()->json([
-                'message' => 'A sincronização requer a configuração de OPENXBL_API_KEY no arquivo .env do servidor. Obtenha uma chave gratuita em https://xbl.io.',
+                'message' => 'O serviço de sincronização do Xbox não está disponível no momento.',
             ], 422);
         }
 
