@@ -248,4 +248,48 @@ class XboxAndGameEntertainmentTest extends TestCase
         $this->assertCount(1, $feedRes->json('data'));
         $this->assertEquals($repost->id, $feedRes->json('data.0.id'));
     }
+
+    public function test_user_can_search_games_via_api(): void
+    {
+        $user = User::factory()->create(['status' => 'approved']);
+
+        Http::fake([
+            'https://api.xbl.io/v2/marketplace/autosuggest*' => Http::response([
+                'content' => [
+                    'Results' => [
+                        [
+                            'ProductFamilyName' => 'Games',
+                            'Products' => [
+                                [
+                                    'Title' => 'LEGO Marvel Super Heroes',
+                                    'ProductId' => 'C58DMS8GP8RF',
+                                    'Icon' => '//store-images.s-microsoft.com/image/apps.4442.boxart.jpg',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+                'code' => 200,
+            ], 200),
+            'https://store.steampowered.com/api/storesearch/*' => Http::response([
+                'total' => 1,
+                'items' => [
+                    [
+                        'id' => 292030,
+                        'name' => 'The Witcher 3: Wild Hunt',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/api/entertainment/games/search?q=lego');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $this->assertNotEmpty($data);
+        $this->assertEquals('LEGO Marvel Super Heroes', $data[0]['title']);
+        $this->assertEquals('https://store-images.s-microsoft.com/image/apps.4442.boxart.jpg', $data[0]['cover_url']);
+        $this->assertEquals('xbox', $data[0]['source']);
+    }
 }
+

@@ -55,6 +55,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/profile/xbox/connect', [XboxController::class, 'connect']);
         Route::post('/profile/xbox/disconnect', [XboxController::class, 'disconnect']);
         Route::post('/profile/xbox/sync', [XboxController::class, 'sync']);
+        Route::get('/entertainment/games/search', [GameReviewController::class, 'search']);
         Route::post('/entertainment/games', [GameReviewController::class, 'store']);
 
         // Users
