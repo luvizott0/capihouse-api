@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'openxbl' => [
+        'api_key' => env('OPENXBL_API_KEY'),
+    ],
+
 ];

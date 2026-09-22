@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\LogoutController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\GameReviewController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\GroupMessageController;
 use App\Http\Controllers\Api\InterestController;
@@ -20,6 +21,7 @@ use App\Http\Controllers\Api\PostLikeController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\XboxController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -50,6 +52,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/profile/letterboxd/connect', [LetterboxdController::class, 'connect']);
         Route::post('/profile/letterboxd/disconnect', [LetterboxdController::class, 'disconnect']);
         Route::post('/profile/letterboxd/sync', [LetterboxdController::class, 'sync']);
+        Route::post('/profile/xbox/connect', [XboxController::class, 'connect']);
+        Route::post('/profile/xbox/disconnect', [XboxController::class, 'disconnect']);
+        Route::post('/profile/xbox/sync', [XboxController::class, 'sync']);
+        Route::post('/entertainment/games', [GameReviewController::class, 'store']);
 
         // Users
         Route::get('/users', [UserController::class, 'index']);

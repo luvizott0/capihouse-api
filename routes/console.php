@@ -22,3 +22,7 @@ Schedule::command('capihouse:generate-birthday-posts')
 Schedule::command('letterboxd:sync')
     ->hourly()
     ->name('capihouse-hourly-letterboxd-sync');
+
+Schedule::command('xbox:sync')
+    ->hourly()
+    ->name('capihouse-hourly-xbox-sync');
