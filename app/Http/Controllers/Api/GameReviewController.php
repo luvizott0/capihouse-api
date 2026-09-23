@@ -133,6 +133,7 @@ class GameReviewController extends Controller
 
         return response()->json(['data' => $results]);
     }
+
     /**
      * Cria uma publicação manual de análise ou registro de jogo.
      */

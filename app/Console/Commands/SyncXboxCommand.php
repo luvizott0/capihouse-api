@@ -36,7 +36,7 @@ class SyncXboxCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info(($runNow ? 'Iniciando sincronização imediata' : 'Enfileirando sincronização') . " do Xbox para {$users->count()} usuário(s)...");
+        $this->info(($runNow ? 'Iniciando sincronização imediata' : 'Enfileirando sincronização')." do Xbox para {$users->count()} usuário(s)...");
 
         foreach ($users as $user) {
             if ($runNow) {

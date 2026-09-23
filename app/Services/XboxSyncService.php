@@ -29,7 +29,7 @@ class XboxSyncService
         if (empty($apiKey)) {
             Log::warning("OpenXBL API Key não configurada. Não foi possível sincronizar Xbox Live para o usuário #{$user->id} ({$gamertag}).");
 
-            throw new Exception("A chave OPENXBL_API_KEY não está configurada no servidor (.env). Obtenha sua chave gratuita em https://xbl.io para sincronizar os dados da Xbox Live.");
+            throw new Exception('A chave OPENXBL_API_KEY não está configurada no servidor (.env). Obtenha sua chave gratuita em https://xbl.io para sincronizar os dados da Xbox Live.');
         }
 
         try {
@@ -45,14 +45,16 @@ class XboxSyncService
 
                 if ($profileRes->successful()) {
                     $rawProfile = $profileRes->json();
-                    $profileData = $rawProfile['content'] ?? $rawProfile;
-                    $xuid = $profileData['profileUsers'][0]['id']
-                        ?? $profileData['xuid']
-                        ?? $profileData['id']
-                        ?? null;
+                    if (($rawProfile['code'] ?? null) !== 404 && ($rawProfile['content']['StatusCode'] ?? null) !== 404) {
+                        $profileData = $rawProfile['content'] ?? $rawProfile;
+                        $xuid = $profileData['profileUsers'][0]['id']
+                            ?? $profileData['xuid']
+                            ?? $profileData['id']
+                            ?? null;
+                    }
                 }
 
-                // Fallback para /v2/account se for a conta autenticada da própria chave
+                // Fallback para /v2/account SOMENTE se a conta autenticada for do próprio usuário (mesma gamertag)
                 if (empty($xuid)) {
                     $accRes = Http::withHeaders([
                         'X-Authorization' => $apiKey,
@@ -62,24 +64,32 @@ class XboxSyncService
                     if ($accRes->successful()) {
                         $rawAcc = $accRes->json();
                         $accData = $rawAcc['content'] ?? $rawAcc;
-                        $xuid = $accData['profileUsers'][0]['id'] ?? null;
+                        $accUser = $accData['profileUsers'][0] ?? null;
+
+                        if ($accUser) {
+                            $accGamertag = null;
+                            foreach ($accUser['settings'] ?? [] as $setting) {
+                                if (in_array($setting['id'] ?? '', ['Gamertag', 'ModernGamertag'], true)) {
+                                    $accGamertag = $setting['value'] ?? null;
+                                    break;
+                                }
+                            }
+                            if ($accGamertag && strcasecmp(trim($accGamertag), $gamertag) === 0) {
+                                $xuid = $accUser['id'] ?? null;
+                            }
+                        }
                     }
                 }
 
                 if ($xuid) {
                     $user->update(['xbox_xuid' => (string) $xuid]);
                 } else {
-                    if ($profileRes->status() === 404) {
-                        throw new Exception("Gamertag '{$gamertag}' não foi encontrada na Xbox Live.");
-                    }
-                    throw new Exception("Não foi possível localizar o identificador XUID da Gamertag '{$gamertag}' na Xbox Live.");
+                    throw new Exception("Não foi possível localizar o identificador da Gamertag '{$gamertag}' na Xbox Live. Verifique se o nome está correto e se o perfil e histórico de jogos estão públicos.");
                 }
             }
 
             // 2. Buscar títulos do jogador via OpenXBL v2
-            $titlesEndpoint = $xuid
-                ? "https://api.xbl.io/v2/titles/{$xuid}"
-                : 'https://api.xbl.io/v2/titles';
+            $titlesEndpoint = "https://api.xbl.io/v2/titles/{$xuid}";
 
             $response = Http::withHeaders([
                 'X-Authorization' => $apiKey,

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Jobs\SyncXboxJob;
+use App\Models\Post;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -26,6 +27,14 @@ class XboxController extends Controller
         $gamertag = trim($validated['gamertag']);
 
         $user = $request->user();
+
+        // Se a gamertag mudou, remove postagens antigas do Xbox associadas à conta anterior
+        if ($user->xbox_gamertag && strcasecmp($user->xbox_gamertag, $gamertag) !== 0) {
+            Post::where('user_id', $user->id)
+                ->where('external_source', 'xbox')
+                ->delete();
+        }
+
         $user->update([
             'xbox_gamertag' => $gamertag,
             'xbox_xuid' => null, // Será preenchido na sincronização
@@ -56,6 +65,11 @@ class XboxController extends Controller
             'xbox_xuid' => null,
             'xbox_last_synced_at' => null,
         ]);
+
+        // Remove postagens sincronizadas do Xbox do feed
+        Post::where('user_id', $user->id)
+            ->where('external_source', 'xbox')
+            ->delete();
 
         Cache::forget("xbox_syncing_{$user->id}");
 

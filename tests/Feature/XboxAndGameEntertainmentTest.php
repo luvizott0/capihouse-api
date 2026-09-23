@@ -55,6 +55,18 @@ class XboxAndGameEntertainmentTest extends TestCase
             'xbox_last_synced_at' => now(),
         ]);
 
+        Post::create([
+            'user_id' => $user->id,
+            'category' => 'entertainment',
+            'entertainment_type' => 'game',
+            'external_source' => 'xbox',
+            'external_id' => "xbox-{$user->id}-1001",
+            'content' => null,
+            'metadata' => ['game_title' => 'Halo Infinite'],
+        ]);
+
+        $this->assertEquals(1, Post::where('user_id', $user->id)->where('external_source', 'xbox')->count());
+
         $response = $this->actingAs($user)->postJson('/api/profile/xbox/disconnect');
 
         $response->assertStatus(200);
@@ -62,6 +74,49 @@ class XboxAndGameEntertainmentTest extends TestCase
         $this->assertNull($user->xbox_gamertag);
         $this->assertNull($user->xbox_xuid);
         $this->assertNull($user->xbox_last_synced_at);
+        $this->assertEquals(0, Post::where('user_id', $user->id)->where('external_source', 'xbox')->count());
+    }
+
+    public function test_xbox_sync_service_does_not_fallback_to_api_owner_when_gamertag_differs()
+    {
+        Config::set('services.openxbl.api_key', 'test-api-key');
+
+        $user = $this->createApprovedUser([
+            'xbox_gamertag' => 'FriendGamer999',
+            'xbox_xuid' => null,
+        ]);
+
+        Http::fake([
+            // Simula busca por amigos retornando 404 (não encontrado)
+            'https://api.xbl.io/v2/friends/search*' => Http::response(['code' => 404, 'content' => ['StatusCode' => 404]], 404),
+            // Conta dona da chave (diferente da gamertag do amigo)
+            'https://api.xbl.io/v2/account' => Http::response([
+                'code' => 200,
+                'content' => [
+                    'profileUsers' => [
+                        [
+                            'id' => '99999999999999',
+                            'settings' => [
+                                ['id' => 'Gamertag', 'value' => 'OwnerGamertag'],
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $service = new XboxSyncService;
+
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage("Não foi possível localizar o identificador da Gamertag 'FriendGamer999' na Xbox Live");
+
+        try {
+            $service->sync($user);
+        } finally {
+            $user->refresh();
+            // Garante que o XUID do dono NÃO foi associado ao amigo
+            $this->assertNull($user->xbox_xuid);
+        }
     }
 
     public function test_user_can_manually_trigger_xbox_sync()
@@ -292,4 +347,3 @@ class XboxAndGameEntertainmentTest extends TestCase
         $this->assertEquals('xbox', $data[0]['source']);
     }
 }
-
