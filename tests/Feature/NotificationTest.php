@@ -112,33 +112,41 @@ class NotificationTest extends TestCase
             'data' => ['group_id' => 99],
         ]);
 
+        AppNotification::create([
+            'user_id' => $user->id,
+            'type' => 'poll_vote',
+            'title' => 'Novo voto na enquete',
+            'content' => 'Alguém votou na sua enquete',
+        ]);
+
         // Check category counts
         $countsRes = $this->actingAs($user)->getJson('/api/notifications/category-counts');
         $countsRes->assertStatus(200)
             ->assertJson([
-                'all' => 5,
-                'unread' => 5,
+                'all' => 6,
+                'unread' => 6,
                 'likes' => 2,
                 'comments' => 1,
                 'mentions' => 1,
                 'groups' => 1,
                 'events' => 0,
+                'polls' => 1,
             ]);
 
         // Filter by unread
         $unreadRes = $this->actingAs($user)->getJson('/api/notifications?category=unread');
         $unreadRes->assertStatus(200)
-            ->assertJsonCount(5, 'data');
+            ->assertJsonCount(6, 'data');
 
         // Mark one as read and verify unread count decreases
         $firstNotif = AppNotification::where('user_id', $user->id)->first();
         $firstNotif->update(['read_at' => now()]);
 
         $countsResAfterRead = $this->actingAs($user)->getJson('/api/notifications/category-counts');
-        $countsResAfterRead->assertJson(['all' => 5, 'unread' => 4]);
+        $countsResAfterRead->assertJson(['all' => 6, 'unread' => 5]);
 
         $unreadResAfterRead = $this->actingAs($user)->getJson('/api/notifications?category=unread');
-        $unreadResAfterRead->assertJsonCount(4, 'data');
+        $unreadResAfterRead->assertJsonCount(5, 'data');
 
         // Filter by likes
         $likesRes = $this->actingAs($user)->getJson('/api/notifications?category=likes');
@@ -165,9 +173,14 @@ class NotificationTest extends TestCase
         $eventsRes->assertStatus(200)
             ->assertJsonCount(0, 'data');
 
+        // Filter by polls
+        $pollsRes = $this->actingAs($user)->getJson('/api/notifications?category=polls');
+        $pollsRes->assertStatus(200)
+            ->assertJsonCount(1, 'data');
+
         // Filter by all
         $allRes = $this->actingAs($user)->getJson('/api/notifications?category=all');
         $allRes->assertStatus(200)
-            ->assertJsonCount(5, 'data');
+            ->assertJsonCount(6, 'data');
     }
 }

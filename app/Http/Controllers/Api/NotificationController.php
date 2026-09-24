@@ -25,6 +25,7 @@ class NotificationController extends Controller
                 'mentions' => $query->whereIn('type', ['post_mention', 'comment_mention']),
                 'groups', 'invites' => $query->where('type', 'group_invite'),
                 'events' => $query->where('type', 'event_rsvp'),
+                'polls', 'votes', 'poll_votes' => $query->where('type', 'poll_vote'),
                 default => $query->where('type', $category),
             };
         }
@@ -105,6 +106,7 @@ class NotificationController extends Controller
             'mentions' => (int) (($counts['post_mention'] ?? 0) + ($counts['comment_mention'] ?? 0)),
             'groups' => (int) ($counts['group_invite'] ?? 0),
             'events' => (int) ($counts['event_rsvp'] ?? 0),
+            'polls' => (int) ($counts['poll_vote'] ?? 0),
         ]);
     }
 }
