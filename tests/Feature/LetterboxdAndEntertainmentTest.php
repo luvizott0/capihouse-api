@@ -226,7 +226,7 @@ XML;
         $this->assertEquals('Interestelar', $repostedInFeed['reposted_post']['metadata']['film_title']);
     }
 
-    public function test_other_users_cannot_repost_someone_elses_entertainment_activity_for_now()
+    public function test_other_users_can_repost_someone_elses_entertainment_activity_or_post()
     {
         $author = $this->createApprovedUser();
         $otherUser = $this->createApprovedUser();
@@ -241,11 +241,17 @@ XML;
         ]);
 
         $response = $this->actingAs($otherUser)->postJson('/api/posts', [
-            'content' => 'Tentando repostar o filme do amigo',
+            'content' => 'Repostando o filme do amigo no meu feed',
             'repost_of_id' => $entertainmentPost->id,
         ]);
 
-        $response->assertStatus(403);
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('posts', [
+            'id' => $response->json('data.id') ?? $response->json('id'),
+            'user_id' => $otherUser->id,
+            'repost_of_id' => $entertainmentPost->id,
+            'content' => 'Repostando o filme do amigo no meu feed',
+        ]);
     }
 
     public function test_entertainment_posts_are_ordered_by_watched_date_descending()

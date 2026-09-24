@@ -40,6 +40,8 @@ class UserResource extends JsonResource
             'is_admin' => $this->isAdmin(),
             'is_online' => $isOnline,
             'theme' => $this->theme,
+            'pinned_post_id' => $this->pinned_post_id,
+            'pinned_post' => $this->whenLoaded('pinnedPost'),
             'avatar' => MediaResource::make($this->whenLoaded('avatar')),
             'banner' => MediaResource::make($this->whenLoaded('banner')),
             'interests' => InterestResource::collection($this->whenLoaded('interests')),

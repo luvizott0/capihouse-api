@@ -36,6 +36,7 @@ class User extends Authenticatable
         'last_seen_at',
         'theme',
         'notification_preferences',
+        'pinned_post_id',
     ];
 
     protected $hidden = [
@@ -253,5 +254,10 @@ class User extends Authenticatable
         $prefs = $this->getEffectiveNotificationPreferences();
 
         return (bool) ($prefs[$category] ?? true);
+    }
+
+    public function pinnedPost()
+    {
+        return $this->belongsTo(Post::class, 'pinned_post_id');
     }
 }

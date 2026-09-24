@@ -18,17 +18,35 @@ class ProfileController extends Controller
 {
     public function show()
     {
-        $user = auth()->user()->load(['avatar', 'banner', 'interests', 'posts', 'postLikes', 'events']);
+        $userId = auth()->id();
+        $user = auth()->user()->load([
+            'avatar', 'banner', 'interests', 'posts', 'postLikes', 'events',
+            'pinnedPost' => fn ($q) => $q->with(PostController::postRelations($userId))->withCount(['likes', 'comments']),
+        ]);
+
+        if ($user->pinnedPost) {
+            PostController::formatPost($user->pinnedPost, $userId);
+        }
 
         return new ProfileResource($user);
     }
 
     public function update(UpdateProfileRequest $request)
     {
+        $userId = auth()->id();
         $user = auth()->user();
         $user->update($request->validated());
 
-        return new ProfileResource($user->load(['avatar', 'banner', 'interests', 'posts', 'postLikes', 'events']));
+        $user->load([
+            'avatar', 'banner', 'interests', 'posts', 'postLikes', 'events',
+            'pinnedPost' => fn ($q) => $q->with(PostController::postRelations($userId))->withCount(['likes', 'comments']),
+        ]);
+
+        if ($user->pinnedPost) {
+            PostController::formatPost($user->pinnedPost, $userId);
+        }
+
+        return new ProfileResource($user);
     }
 
     public function uploadAvatar(UploadAvatarRequest $request)

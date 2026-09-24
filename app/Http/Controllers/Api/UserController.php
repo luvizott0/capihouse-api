@@ -29,14 +29,34 @@ class UserController extends Controller
 
     public function me()
     {
-        $user = auth()->user()->load(['avatar', 'banner', 'interests']);
+        $userId = auth()->id();
+        $user = auth()->user()->load([
+            'avatar',
+            'banner',
+            'interests',
+            'pinnedPost' => fn ($q) => $q->with(PostController::postRelations($userId))->withCount(['likes', 'comments']),
+        ]);
+
+        if ($user->pinnedPost) {
+            PostController::formatPost($user->pinnedPost, $userId);
+        }
 
         return new UserResource($user);
     }
 
     public function show(User $user)
     {
-        $user->load(['avatar', 'banner', 'interests']);
+        $userId = auth()->id();
+        $user->load([
+            'avatar',
+            'banner',
+            'interests',
+            'pinnedPost' => fn ($q) => $q->with(PostController::postRelations($userId))->withCount(['likes', 'comments']),
+        ]);
+
+        if ($user->pinnedPost) {
+            PostController::formatPost($user->pinnedPost, $userId);
+        }
 
         return new UserResource($user);
     }

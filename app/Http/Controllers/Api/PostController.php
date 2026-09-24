@@ -280,9 +280,11 @@ class PostController extends Controller
             if (! $originalPost) {
                 return response()->json(['message' => 'A publicação original a ser repostada não foi encontrada.'], 404);
             }
-            // Decisão: apenas o próprio autor pode repostar por enquanto
-            if ($originalPost->user_id !== auth()->id() && ! auth()->user()->isAdmin()) {
-                return response()->json(['message' => 'Você só pode repostar suas próprias atividades no momento.'], 403);
+            if ($originalPost->group_id) {
+                $isMember = auth()->user()->acceptedGroups()->where('groups.id', $originalPost->group_id)->exists();
+                if (! $isMember && ! auth()->user()->isAdmin()) {
+                    return response()->json(['message' => 'Você não tem permissão para repostar uma publicação deste grupo.'], 403);
+                }
             }
         }
 
@@ -597,7 +599,88 @@ class PostController extends Controller
         return response()->json(['message' => 'Post excluído com sucesso.']);
     }
 
-    protected function formatPostPoll(Post $post, int $userId): void
+    public function pin(Post $post)
+    {
+        $user = auth()->user();
+
+        // Apenas posts dele mesmo
+        if ($post->user_id !== $user->id) {
+            return response()->json(['message' => 'Você só pode fixar publicações do seu próprio perfil.'], 403);
+        }
+
+        if ($user->pinned_post_id === $post->id) {
+            $user->update(['pinned_post_id' => null]);
+            $isPinned = false;
+            $message = 'Publicação desafixada do seu perfil.';
+        } else {
+            $user->update(['pinned_post_id' => $post->id]);
+            $isPinned = true;
+            $message = 'Publicação fixada no seu perfil com sucesso.';
+        }
+
+        return response()->json([
+            'pinned' => $isPinned,
+            'pinned_post_id' => $user->pinned_post_id,
+            'message' => $message,
+        ]);
+    }
+
+    public function unpin(Post $post)
+    {
+        $user = auth()->user();
+
+        if ($user->pinned_post_id === $post->id) {
+            $user->update(['pinned_post_id' => null]);
+        }
+
+        return response()->json([
+            'pinned' => false,
+            'pinned_post_id' => null,
+            'message' => 'Publicação desafixada do seu perfil.',
+        ]);
+    }
+
+    public static function postRelations(?int $userId = null): array
+    {
+        return [
+            'user',
+            'group:id,name',
+            'event:id,name',
+            'media',
+            'feeling',
+            'hashtags',
+            'mentions:id,name,username,avatar_url',
+            'comments.user',
+            'comments.mentions:id,name,username,avatar_url',
+            'comments.parent.user:id,name,username',
+            'comments.likes' => fn ($q) => $userId ? $q->where('user_id', $userId) : $q->whereRaw('1=0'),
+            'likes' => fn ($q) => $userId ? $q->where('user_id', $userId) : $q->whereRaw('1=0'),
+            'poll.options',
+            'poll.votes' => fn ($q) => $userId ? $q->where('user_id', $userId) : $q->whereRaw('1=0'),
+            'repostedPost.user:id,name,username,avatar_url',
+            'repostedPost.media',
+        ];
+    }
+
+    public static function formatPost(Post $post, ?int $userId = null): Post
+    {
+        $post->is_liked = $post->likes && $post->likes->isNotEmpty();
+        if ($userId) {
+            self::formatPostPollStatic($post, $userId);
+        }
+        if ($post->comments) {
+            $post->comments->transform(function ($comment) {
+                $comment->is_liked = $comment->likes ? $comment->likes->isNotEmpty() : false;
+                unset($comment->likes);
+
+                return $comment;
+            });
+        }
+
+        return $post;
+    }
+
+    public static function formatPostPollStatic(Post $post, ?int $userId = null): void
     {
         if (! $post->relationLoaded('poll') || ! $post->poll) {
             $post->unsetRelation('poll');
@@ -612,7 +695,7 @@ class PostController extends Controller
         $userVotedOptionId = $userVote?->poll_option_id;
         $totalVotes = $poll->relationLoaded('options') ? (int) $poll->options->sum('votes_count') : 0;
 
-        $isAuthor = (int) $post->user_id === (int) $userId;
+        $isAuthor = $userId && (int) $post->user_id === (int) $userId;
         $isAdmin = auth()->user()?->isAdmin() ?? false;
         $canSeeResults = $hasVoted || $isAuthor || $isAdmin;
 
@@ -649,5 +732,10 @@ class PostController extends Controller
 
         $post->unsetRelation('poll');
         $post->setAttribute('poll', $formattedPoll);
+    }
+
+    protected function formatPostPoll(Post $post, int $userId): void
+    {
+        self::formatPostPollStatic($post, $userId);
     }
 }
