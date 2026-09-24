@@ -116,13 +116,14 @@ class PostCommentController extends Controller
             'content' => 'required|string|max:500',
         ]);
 
+        $oldContent = $comment->content;
         $comment->update([
             'content' => $request->input('content'),
         ]);
 
         $post = $comment->post;
         if ($post) {
-            MentionService::syncCommentMentions($comment, auth()->user(), $post);
+            MentionService::syncCommentMentions($comment, auth()->user(), $post, $oldContent);
         }
 
         $comment->load([

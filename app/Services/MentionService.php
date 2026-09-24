@@ -13,6 +13,18 @@ use Illuminate\Support\Collection;
 class MentionService
 {
     /**
+     * Check if text contains the global mention @todos.
+     */
+    public static function containsEveryoneMention(?string $content): bool
+    {
+        if (empty($content)) {
+            return false;
+        }
+
+        return (bool) preg_match('/(?:^|\s)@todos\b/i', $content);
+    }
+
+    /**
      * Extract unique usernames from given text.
      * Matches patterns like @username, @user-name, @user_name.
      */
@@ -28,7 +40,10 @@ class MentionService
             return [];
         }
 
-        return array_values(array_unique(array_filter($matches[1])));
+        $usernames = array_values(array_unique(array_filter($matches[1])));
+
+        // Filter out global mention reserved keywords like 'todos'
+        return array_values(array_filter($usernames, fn ($u) => strtolower($u) !== 'todos'));
     }
 
     /**
@@ -55,7 +70,7 @@ class MentionService
     /**
      * Synchronize post mentions and notify new mentions.
      */
-    public static function syncPostMentions(Post $post, User $author): void
+    public static function syncPostMentions(Post $post, User $author, ?string $oldContent = null): void
     {
         $previousIds = $post->mentions()->pluck('users.id')->toArray();
         $mentionedUsers = self::getMentionedUsers($post->content, $author->id);
@@ -83,13 +98,44 @@ class MentionService
                 url: '/posts/'.$post->id
             );
         }
+
+        // Global mention: @todos
+        $hasEveryone = self::containsEveryoneMention($post->content);
+        $hadEveryone = $oldContent !== null ? self::containsEveryoneMention($oldContent) : false;
+        $isNewEveryone = $hasEveryone && ($post->wasRecentlyCreated || ! $hadEveryone);
+
+        if ($isNewEveryone) {
+            $alreadyNotifiedIds = $addedUsers->pluck('id')->push($author->id)->unique()->toArray();
+
+            $allUsers = User::where('status', UserStatuses::APPROVED)
+                ->whereNotIn('id', $alreadyNotifiedIds)
+                ->get();
+
+            foreach ($allUsers as $user) {
+                NotificationDispatcherService::send(
+                    recipient: $user->id,
+                    type: 'post_mention',
+                    title: '📢 Menção para todos',
+                    content: "{$author->name} mencionou todos (@todos) em uma publicação: \"{$snippet}\"",
+                    data: [
+                        'post_id' => $post->id,
+                        'author_id' => $author->id,
+                        'author_name' => $author->name,
+                        'author_username' => $author->username,
+                        'author_avatar' => $author->avatar_url,
+                        'is_all' => true,
+                    ],
+                    url: '/posts/'.$post->id
+                );
+            }
+        }
     }
 
     /**
      * Synchronize comment mentions and notify new mentions.
      * Returns list of mentioned user IDs so caller knows if post author was mentioned.
      */
-    public static function syncCommentMentions(PostComment $comment, User $commenter, Post $post): array
+    public static function syncCommentMentions(PostComment $comment, User $commenter, Post $post, ?string $oldContent = null): array
     {
         $previousIds = $comment->mentions()->pluck('users.id')->toArray();
         $mentionedUsers = self::getMentionedUsers($comment->content, $commenter->id);
@@ -116,6 +162,38 @@ class MentionService
                 ],
                 url: '/posts/'.$post->id
             );
+        }
+
+        // Global mention: @todos in comment
+        $hasEveryone = self::containsEveryoneMention($comment->content);
+        $hadEveryone = $oldContent !== null ? self::containsEveryoneMention($oldContent) : false;
+        $isNewEveryone = $hasEveryone && ($comment->wasRecentlyCreated || ! $hadEveryone);
+
+        if ($isNewEveryone) {
+            $alreadyNotifiedIds = $addedUsers->pluck('id')->push($commenter->id)->unique()->toArray();
+
+            $allUsers = User::where('status', UserStatuses::APPROVED)
+                ->whereNotIn('id', $alreadyNotifiedIds)
+                ->get();
+
+            foreach ($allUsers as $user) {
+                NotificationDispatcherService::send(
+                    recipient: $user->id,
+                    type: 'comment_mention',
+                    title: '📢 Menção para todos',
+                    content: "{$commenter->name} mencionou todos (@todos) em um comentário: \"{$snippet}\"",
+                    data: [
+                        'post_id' => $post->id,
+                        'comment_id' => $comment->id,
+                        'commenter_id' => $commenter->id,
+                        'commenter_name' => $commenter->name,
+                        'commenter_username' => $commenter->username,
+                        'commenter_avatar' => $commenter->avatar_url,
+                        'is_all' => true,
+                    ],
+                    url: '/posts/'.$post->id
+                );
+            }
         }
 
         return $newIds;

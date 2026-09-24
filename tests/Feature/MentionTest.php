@@ -112,4 +112,125 @@ class MentionTest extends TestCase
             'type' => 'comment_mention',
         ]);
     }
+
+    public function test_mention_todos_in_post_notifies_all_approved_users_without_attaching_to_post_mentions()
+    {
+        $author = $this->createApprovedUser(['username' => 'alice']);
+        $bob = $this->createApprovedUser(['username' => 'bob']);
+        $charlie = $this->createApprovedUser(['username' => 'charlie']);
+
+        $response = $this->actingAs($author)->postJson('/api/posts', [
+            'content' => 'Atenção @todos, teremos reunião na cozinha hoje às 20h!',
+        ]);
+
+        $response->assertStatus(201);
+        $postId = $response->json('id');
+
+        // Post mentions pivot table should be empty (no users attached directly)
+        $this->assertDatabaseMissing('post_mentions', [
+            'post_id' => $postId,
+        ]);
+
+        // Author should not be notified
+        $this->assertDatabaseMissing('app_notifications', [
+            'user_id' => $author->id,
+            'type' => 'post_mention',
+        ]);
+
+        // Other approved users should be notified
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $bob->id,
+            'type' => 'post_mention',
+        ]);
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $charlie->id,
+            'type' => 'post_mention',
+        ]);
+
+        // Post should NOT appear in bob's profile query because he was not directly attached
+        $profileResponse = $this->actingAs($bob)->getJson("/api/posts?user_id={$bob->id}");
+        $profileResponse->assertStatus(200);
+        $postIds = collect($profileResponse->json('data'))->pluck('id')->toArray();
+        $this->assertNotContains($postId, $postIds);
+    }
+
+    public function test_mention_todos_with_specific_user_mentions_attaches_only_specific_user_and_deduplicates()
+    {
+        $author = $this->createApprovedUser(['username' => 'alice']);
+        $bob = $this->createApprovedUser(['username' => 'bob']);
+        $charlie = $this->createApprovedUser(['username' => 'charlie']);
+
+        $response = $this->actingAs($author)->postJson('/api/posts', [
+            'content' => 'Alô @bob e @todos, vejam isso!',
+        ]);
+
+        $response->assertStatus(201);
+        $postId = $response->json('id');
+
+        // Bob should be in post_mentions, but charlie should NOT
+        $this->assertDatabaseHas('post_mentions', [
+            'post_id' => $postId,
+            'user_id' => $bob->id,
+        ]);
+        $this->assertDatabaseMissing('post_mentions', [
+            'post_id' => $postId,
+            'user_id' => $charlie->id,
+        ]);
+
+        // Bob should only receive ONE notification (the individual one), not two
+        $bobNotifications = \App\Models\AppNotification::where('user_id', $bob->id)->get();
+        $this->assertCount(1, $bobNotifications);
+
+        // Charlie receives the @todos notification
+        $charlieNotifications = \App\Models\AppNotification::where('user_id', $charlie->id)->get();
+        $this->assertCount(1, $charlieNotifications);
+    }
+
+    public function test_mention_todos_in_comment_notifies_all_approved_users()
+    {
+        $author = $this->createApprovedUser(['username' => 'alice']);
+        $bob = $this->createApprovedUser(['username' => 'bob']);
+        $charlie = $this->createApprovedUser(['username' => 'charlie']);
+
+        $post = Post::create([
+            'user_id' => $author->id,
+            'content' => 'Publicação normal',
+        ]);
+
+        $response = $this->actingAs($bob)->postJson("/api/posts/{$post->id}/comments", [
+            'content' => 'Comentário importante para @todos!',
+        ]);
+
+        $response->assertStatus(201);
+
+        // Bob (commenter) should not receive notification
+        $this->assertDatabaseMissing('app_notifications', [
+            'user_id' => $bob->id,
+            'type' => 'comment_mention',
+        ]);
+
+        // Alice and Charlie should be notified
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $author->id,
+            'type' => 'comment_mention',
+        ]);
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $charlie->id,
+            'type' => 'comment_mention',
+        ]);
+    }
+
+    public function test_cannot_register_with_todos_username()
+    {
+        $response = $this->postJson('/api/auth/register', [
+            'name' => 'Conta Todos',
+            'username' => 'todos',
+            'email' => 'todos@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['username']);
+    }
 }

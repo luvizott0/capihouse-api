@@ -472,6 +472,7 @@ class PostController extends Controller
             return response()->json(['message' => 'O post precisa ter texto, mídia ou votação.'], 422);
         }
 
+        $oldContent = $post->content;
         $post->update([
             'content' => $request->input('content'),
         ]);
@@ -537,7 +538,7 @@ class PostController extends Controller
         }
 
         // Mentions
-        MentionService::syncPostMentions($post, auth()->user());
+        MentionService::syncPostMentions($post, auth()->user(), $oldContent);
 
         $post->load([
             'user',
