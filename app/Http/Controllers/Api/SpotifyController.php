@@ -143,7 +143,7 @@ class SpotifyController extends Controller
             ]);
         }
 
-        $tracks = $this->spotifyService->searchTracks($query, 12);
+        $tracks = $this->spotifyService->searchTracks($query, 10);
 
         return response()->json([
             'tracks' => $tracks,

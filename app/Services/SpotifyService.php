@@ -232,50 +232,79 @@ class SpotifyService
             return [];
         }
 
-        $cacheKey = 'spotify_search_'.md5(mb_strtolower($query).'_'.$limit);
+        $safeLimit = min(max((int) $limit, 1), 10);
+        $cacheKey = 'spotify_search_'.md5(mb_strtolower($query).'_'.$safeLimit);
 
-        return Cache::remember($cacheKey, 600, function () use ($appToken, $query, $limit) {
-            try {
-                $response = Http::withToken($appToken)
-                    ->timeout(3)
-                    ->get('https://api.spotify.com/v1/search', [
-                        'q' => $query,
-                        'type' => 'track',
-                        'limit' => min($limit, 20),
-                        'market' => 'BR',
-                    ]);
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
 
-                if (! $response->successful()) {
-                    return [];
+        $appToken = $this->getAppAccessToken();
+        if (! $appToken) {
+            return [];
+        }
+
+        try {
+            $response = Http::withToken($appToken)
+                ->timeout(4)
+                ->get('https://api.spotify.com/v1/search', [
+                    'q' => $query,
+                    'type' => 'track',
+                    'limit' => $safeLimit,
+                ]);
+
+            if ($response->status() === 401) {
+                Cache::forget('spotify_app_client_token');
+                $appToken = $this->getAppAccessToken();
+                if ($appToken) {
+                    $response = Http::withToken($appToken)
+                        ->timeout(4)
+                        ->get('https://api.spotify.com/v1/search', [
+                            'q' => $query,
+                            'type' => 'track',
+                            'limit' => $safeLimit,
+                        ]);
                 }
+            }
 
-                $items = $response->json('tracks.items') ?? [];
-
-                return collect($items)->map(function ($item) {
-                    $artists = collect($item['artists'] ?? [])->pluck('name')->join(', ');
-                    $albumArt = $item['album']['images'][0]['url'] ?? null;
-                    if (isset($item['album']['images'][1])) {
-                        // Prefere a imagem média (300x300) se disponível
-                        $albumArt = $item['album']['images'][1]['url'];
-                    }
-
-                    return [
-                        'id' => $item['id'],
-                        'title' => $item['name'],
-                        'artist' => $artists,
-                        'album' => $item['album']['name'] ?? '',
-                        'album_art' => $albumArt,
-                        'spotify_url' => $item['external_urls']['spotify'] ?? null,
-                        'duration_ms' => $item['duration_ms'] ?? 0,
-                        'preview_url' => $item['preview_url'] ?? null,
-                    ];
-                })->all();
-            } catch (Exception $e) {
-                Log::warning('Erro na busca de faixas no Spotify: '.$e->getMessage());
+            if (! $response || ! $response->successful()) {
+                Log::warning('Erro na busca de faixas no Spotify: '.($response ? $response->body() : 'no response'));
 
                 return [];
             }
-        });
+
+            $items = $response->json('tracks.items') ?? [];
+
+            $results = collect($items)->map(function ($item) {
+                $artists = collect($item['artists'] ?? [])->pluck('name')->join(', ');
+                $albumArt = $item['album']['images'][0]['url'] ?? null;
+                if (isset($item['album']['images'][1])) {
+                    // Prefere a imagem média (300x300) se disponível
+                    $albumArt = $item['album']['images'][1]['url'];
+                }
+
+                return [
+                    'id' => $item['id'],
+                    'title' => $item['name'],
+                    'artist' => $artists,
+                    'album' => $item['album']['name'] ?? '',
+                    'album_art' => $albumArt,
+                    'spotify_url' => $item['external_urls']['spotify'] ?? null,
+                    'duration_ms' => $item['duration_ms'] ?? 0,
+                    'preview_url' => $item['preview_url'] ?? null,
+                ];
+            })->all();
+
+            if (! empty($results)) {
+                Cache::put($cacheKey, $results, 600);
+            }
+
+            return $results;
+        } catch (Exception $e) {
+            Log::warning('Erro na busca de faixas no Spotify: '.$e->getMessage());
+
+            return [];
+        }
     }
 
     /**
