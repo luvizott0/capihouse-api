@@ -34,10 +34,11 @@ class SpotifyService
     /**
      * Gera a URL para autorização OAuth 2.0 do Spotify.
      */
-    public function getAuthUrl(int $userId): string
+    public function getAuthUrl(int $userId, ?string $frontendUrl = null): string
     {
         $state = encrypt([
             'user_id' => $userId,
+            'frontend_url' => $frontendUrl,
             'timestamp' => now()->timestamp,
         ]);
 

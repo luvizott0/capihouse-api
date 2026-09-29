@@ -32,7 +32,16 @@ class SpotifyController extends Controller
             ], 422);
         }
 
-        $url = $this->spotifyService->getAuthUrl($request->user()->id);
+        $frontendUrl = $request->query('frontend_url') ?? $request->header('origin') ?? config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:5173'));
+        if ($frontendUrl && str_starts_with($frontendUrl, 'http')) {
+            $parts = parse_url($frontendUrl);
+            if (isset($parts['scheme']) && isset($parts['host'])) {
+                $frontendUrl = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
+            }
+        }
+        $frontendUrl = rtrim((string) $frontendUrl, '/');
+
+        $url = $this->spotifyService->getAuthUrl($request->user()->id, $frontendUrl);
 
         return response()->json([
             'url' => $url,
@@ -48,7 +57,16 @@ class SpotifyController extends Controller
         $state = $request->query('state') ?? $request->input('state');
         $error = $request->query('error') ?? $request->input('error');
 
-        $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
+        $defaultFrontend = rtrim(config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:5173')), '/');
+        $frontendUrl = $defaultFrontend;
+
+        $stateData = null;
+        if ($state) {
+            $stateData = $this->spotifyService->validateState($state);
+            if ($stateData && ! empty($stateData['frontend_url'])) {
+                $frontendUrl = rtrim((string) $stateData['frontend_url'], '/');
+            }
+        }
 
         if ($error || ! $code || ! $state) {
             if ($request->wantsJson()) {
@@ -60,7 +78,6 @@ class SpotifyController extends Controller
             return redirect("{$frontendUrl}/profile?spotify_error=access_denied");
         }
 
-        $stateData = $this->spotifyService->validateState($state);
         if (! $stateData) {
             if ($request->wantsJson()) {
                 return response()->json([
