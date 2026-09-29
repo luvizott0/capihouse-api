@@ -33,6 +33,8 @@ class UserResource extends JsonResource
             'spotify_display_name' => $this->spotify_display_name,
             'spotify_avatar_url' => $this->spotify_avatar_url,
             'spotify_profile_url' => $this->spotify_profile_url,
+            'lastfm_username' => $this->lastfm_username,
+            'has_lastfm_connected' => ! empty($this->lastfm_username),
             'favorite_music' => $this->favorite_music,
             'spotify_current_track' => Cache::get("user_spotify_track_{$this->id}"),
             'letterboxd_username' => $this->letterboxd_username,

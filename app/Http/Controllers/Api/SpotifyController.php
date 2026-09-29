@@ -8,6 +8,7 @@ use App\Http\Resources\UserResource;
 use App\Models\Hashtag;
 use App\Models\Post;
 use App\Models\User;
+use App\Services\LastFmService;
 use App\Services\SpotifyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -18,7 +19,8 @@ use Illuminate\Support\Str;
 class SpotifyController extends Controller
 {
     public function __construct(
-        protected SpotifyService $spotifyService
+        protected SpotifyService $spotifyService,
+        protected LastFmService $lastFmService
     ) {}
 
     /**
@@ -218,17 +220,67 @@ class SpotifyController extends Controller
     }
 
     /**
-     * Retorna a faixa tocando no momento para o perfil especificado.
+     * Retorna a faixa tocando no momento ou recente para o perfil especificado (Spotify ou Last.fm).
      */
     public function currentlyPlaying(User $user): JsonResponse
     {
-        $data = $this->spotifyService->getCurrentlyPlaying($user);
+        // 1. Se tiver Spotify conectado, prioriza Spotify
+        if ($user->hasSpotifyConnected()) {
+            $spotifyData = $this->spotifyService->getCurrentlyPlaying($user);
 
-        return response()->json($data);
+            // Se o Spotify estiver tocando no momento, retorna direto
+            if (! empty($spotifyData['is_playing'])) {
+                $spotifyData['source'] = 'spotify';
+                $spotifyData['has_lastfm'] = $user->hasLastFmConnected();
+
+                return response()->json($spotifyData);
+            }
+
+            // Se o Spotify não está tocando, mas o usuário tem Last.fm, verifica se o Last.fm está tocando agora
+            if ($user->hasLastFmConnected()) {
+                $lastfmData = $this->lastFmService->getCurrentlyPlaying($user);
+                if (! empty($lastfmData['is_playing'])) {
+                    return response()->json($lastfmData);
+                }
+            }
+
+            // Se o Spotify possui registro de música recente
+            if (! empty($spotifyData['title'])) {
+                $spotifyData['source'] = 'spotify';
+                $spotifyData['has_lastfm'] = $user->hasLastFmConnected();
+
+                return response()->json($spotifyData);
+            }
+
+            // Se o Spotify não retornou música recente, mas o Last.fm possui
+            if ($user->hasLastFmConnected() && isset($lastfmData) && ! empty($lastfmData['title'])) {
+                return response()->json($lastfmData);
+            }
+
+            $spotifyData['source'] = 'spotify';
+            $spotifyData['has_lastfm'] = $user->hasLastFmConnected();
+
+            return response()->json($spotifyData);
+        }
+
+        // 2. Se não tem Spotify conectado, mas tem Last.fm conectado
+        if ($user->hasLastFmConnected()) {
+            $lastfmData = $this->lastFmService->getCurrentlyPlaying($user);
+
+            return response()->json($lastfmData);
+        }
+
+        // 3. Nenhum provedor de música conectado
+        return response()->json([
+            'is_playing' => false,
+            'is_recent' => false,
+            'has_spotify' => false,
+            'has_lastfm' => false,
+        ]);
     }
 
     /**
-     * Publica uma música do Spotify como um post no feed (repost/compartilhamento de música).
+     * Publica uma música do Spotify ou Last.fm como um post no feed (repost/compartilhamento de música).
      */
     public function repostMusic(Request $request): JsonResponse
     {
@@ -242,6 +294,8 @@ class SpotifyController extends Controller
             'track.preview_url' => 'nullable|string|max:1000',
             'track.duration_ms' => 'nullable|integer',
             'track.id' => 'nullable|string|max:255',
+            'track.source' => 'nullable|string|in:spotify,lastfm',
+            'source' => 'nullable|string|in:spotify,lastfm',
             'content' => 'nullable|string|max:2000',
             'feeling_name' => 'nullable|string|max:15',
             'feeling_emoji' => 'nullable|string|max:32',
@@ -253,13 +307,14 @@ class SpotifyController extends Controller
         $user = $request->user();
         $track = $validated['track'];
         $trackId = $track['id'] ?? Str::uuid()->toString();
+        $source = $validated['source'] ?? ($track['source'] ?? 'spotify');
 
         $post = Post::create([
             'user_id' => $user->id,
             'category' => 'feed',
             'entertainment_type' => 'music',
-            'external_source' => 'spotify',
-            'external_id' => 'spotify:'.$trackId.':'.now()->timestamp,
+            'external_source' => $source,
+            'external_id' => $source.':'.$trackId.':'.now()->timestamp,
             'content' => $validated['content'] ?? null,
             'metadata' => [
                 'track_id' => $trackId,

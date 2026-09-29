@@ -45,4 +45,8 @@ return [
         'redirect_uri' => env('SPOTIFY_REDIRECT_URI', env('APP_URL', 'http://localhost:8000').'/api/spotify/callback'),
     ],
 
+    'lastfm' => [
+        'api_key' => env('LASTFM_API_KEY'),
+    ],
+
 ];

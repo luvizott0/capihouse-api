@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\GameReviewController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\GroupMessageController;
 use App\Http\Controllers\Api\InterestController;
+use App\Http\Controllers\Api\LastFmController;
 use App\Http\Controllers\Api\LetterboxdController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationPreferenceController;
@@ -62,6 +63,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/profile/letterboxd/connect', [LetterboxdController::class, 'connect']);
         Route::post('/profile/letterboxd/disconnect', [LetterboxdController::class, 'disconnect']);
         Route::post('/profile/letterboxd/sync', [LetterboxdController::class, 'sync']);
+        Route::post('/profile/lastfm/connect', [LastFmController::class, 'connect']);
+        Route::post('/profile/lastfm/disconnect', [LastFmController::class, 'disconnect']);
         Route::post('/profile/xbox/connect', [XboxController::class, 'connect']);
         Route::post('/profile/xbox/disconnect', [XboxController::class, 'disconnect']);
         Route::post('/profile/xbox/sync', [XboxController::class, 'sync']);
@@ -73,6 +76,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/users/online', [UserController::class, 'online']);
         Route::get('/users/{user:username}', [UserController::class, 'show']);
         Route::get('/users/{user:username}/spotify-status', [SpotifyController::class, 'currentlyPlaying']);
+        Route::get('/users/{user:username}/music-status', [SpotifyController::class, 'currentlyPlaying']);
 
         // Interests
         Route::get('/interests', [InterestController::class, 'index']);

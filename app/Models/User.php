@@ -35,6 +35,7 @@ class User extends Authenticatable
         'spotify_avatar_url',
         'spotify_profile_url',
         'spotify_display_name',
+        'lastfm_username',
         'favorite_music',
         'letterboxd_username',
         'letterboxd_last_synced_at',
@@ -79,6 +80,16 @@ class User extends Authenticatable
     public function hasSpotifyConnected(): bool
     {
         return ! empty($this->spotify_refresh_token);
+    }
+
+    public function hasLastFmConnected(): bool
+    {
+        return ! empty($this->lastfm_username);
+    }
+
+    public function hasMusicConnected(): bool
+    {
+        return $this->hasSpotifyConnected() || $this->hasLastFmConnected();
     }
 
     public function getAvatarUrlAttribute(?string $value): ?string
