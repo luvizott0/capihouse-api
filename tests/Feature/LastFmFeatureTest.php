@@ -131,7 +131,11 @@ class LastFmFeatureTest extends TestCase
             ->assertJsonPath('source', 'lastfm')
             ->assertJsonPath('title', 'Starboy')
             ->assertJsonPath('artist', 'The Weeknd')
-            ->assertJsonPath('album_art', 'https://example.com/starboy.jpg');
+            ->assertJsonPath('album_art', 'https://example.com/starboy.jpg')
+            ->assertJsonStructure(['duration_ms', 'progress_ms']);
+
+        $this->assertGreaterThan(0, $response->json('duration_ms'));
+        $this->assertIsInt($response->json('progress_ms'));
 
         $cached = Cache::get("user_spotify_track_{$this->user->id}");
         $this->assertNotNull($cached);

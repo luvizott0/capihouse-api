@@ -15,8 +15,9 @@ class LastFmService
 
     protected string $apiUrl = 'https://ws.audioscrobbler.com/2.0/';
 
-    public function __construct()
-    {
+    public function __construct(
+        protected ?SpotifyService $spotifyService = null
+    ) {
         $this->apiKey = config('services.lastfm.api_key');
     }
 
@@ -177,6 +178,37 @@ class LastFmService
                 $playedAt = Carbon::createFromTimestamp((int) $first['date']['uts'])->toIso8601String();
             }
 
+            // Resolve metadados estendidos (duração e link oficial)
+            $details = $this->resolveTrackDetails($first['name'], $artistName);
+            $durationMs = $details['duration_ms'] ?? 210000;
+            if (! empty($details['album_art']) && empty($albumArt)) {
+                $albumArt = $details['album_art'];
+            }
+            $spotifyUrl = $details['spotify_url'] ?? $trackUrl;
+
+            // Estimativa inteligente de progresso em tempo real
+            $progressMs = 0;
+            if ($isNowPlaying) {
+                $trackKey = md5(mb_strtolower($artistName).'_'.mb_strtolower($first['name']));
+                $sessionKey = "user_music_session_{$user->id}";
+                $session = Cache::get($sessionKey);
+
+                if (is_array($session) && ($session['track_key'] ?? null) === $trackKey && ! empty($session['started_at'])) {
+                    $startedAt = (int) $session['started_at'];
+                } else {
+                    $startedAt = now()->timestamp;
+                    Cache::put($sessionKey, [
+                        'track_key' => $trackKey,
+                        'started_at' => $startedAt,
+                    ], 600);
+                }
+
+                $elapsedMs = (now()->timestamp - $startedAt) * 1000;
+                $progressMs = min($durationMs, max(0, $elapsedMs));
+            } else {
+                Cache::forget("user_music_session_{$user->id}");
+            }
+
             $trackData = [
                 'is_playing' => $isNowPlaying,
                 'is_recent' => ! $isNowPlaying,
@@ -188,8 +220,10 @@ class LastFmService
                 'artist' => $artistName,
                 'album' => $albumName,
                 'album_art' => $albumArt,
-                'spotify_url' => $trackUrl,
+                'spotify_url' => $spotifyUrl,
                 'url' => $trackUrl,
+                'duration_ms' => $durationMs,
+                'progress_ms' => $progressMs,
                 'played_at' => $playedAt,
                 'fetched_at' => now()->timestamp,
             ];
@@ -216,5 +250,75 @@ class LastFmService
 
             return $payload;
         }
+    }
+
+    /**
+     * Resolve detalhes estendidos da faixa (duração, capa em alta resolução e link).
+     */
+    public function resolveTrackDetails(string $title, string $artist): array
+    {
+        $cacheKey = 'music_meta_'.md5(mb_strtolower($artist).'_'.mb_strtolower($title));
+
+        return Cache::remember($cacheKey, 604800, function () use ($title, $artist) {
+            $durationMs = null;
+            $albumArt = null;
+            $spotifyUrl = null;
+
+            // 1. Tenta consultar via busca pública do catálogo Spotify (Client Credentials sem limites de usuários)
+            if ($this->spotifyService && $this->spotifyService->isConfigured()) {
+                try {
+                    $spotifyTracks = $this->spotifyService->searchTracks("{$title} {$artist}", 1);
+                    if (! empty($spotifyTracks[0])) {
+                        $st = $spotifyTracks[0];
+                        if (! empty($st['duration_ms']) && $st['duration_ms'] > 0) {
+                            $durationMs = (int) $st['duration_ms'];
+                        }
+                        if (! empty($st['album_art'])) {
+                            $albumArt = $st['album_art'];
+                        }
+                        if (! empty($st['spotify_url'])) {
+                            $spotifyUrl = $st['spotify_url'];
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Silencioso
+                }
+            }
+
+            // 2. Se não obtiver duração, tenta buscar via Last.fm track.getInfo
+            if (! $durationMs && $this->isConfigured()) {
+                try {
+                    $response = Http::withUserAgent('CapiHouse/1.0 (+https://capihouse.app)')
+                        ->timeout(3)
+                        ->get($this->apiUrl, [
+                            'method' => 'track.getInfo',
+                            'artist' => $artist,
+                            'track' => $title,
+                            'api_key' => $this->apiKey,
+                            'format' => 'json',
+                        ]);
+
+                    if ($response->successful()) {
+                        $rawDur = (int) $response->json('track.duration');
+                        if ($rawDur > 0) {
+                            $durationMs = $rawDur;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Silencioso
+                }
+            }
+
+            // Fallback para duração padrão estimada (3 min e 30 seg)
+            if (! $durationMs || $durationMs <= 0) {
+                $durationMs = 210000;
+            }
+
+            return [
+                'duration_ms' => $durationMs,
+                'album_art' => $albumArt,
+                'spotify_url' => $spotifyUrl,
+            ];
+        });
     }
 }
