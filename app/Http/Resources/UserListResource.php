@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Cache;
 
 class UserListResource extends JsonResource
 {
@@ -21,6 +22,7 @@ class UserListResource extends JsonResource
             'role' => $this->role instanceof \BackedEnum ? $this->role->value : (string) $this->role,
             'initials' => $this->initials(),
             'is_online' => $isOnline,
+            'spotify_current_track' => Cache::get("user_spotify_track_{$this->id}"),
             'created_at' => $this->created_at,
         ];
     }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\UserRoles;
 use App\Enums\UserStatuses;
+use App\Models\AppNotification;
 use App\Models\Post;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -178,11 +179,11 @@ class MentionTest extends TestCase
         ]);
 
         // Bob should only receive ONE notification (the individual one), not two
-        $bobNotifications = \App\Models\AppNotification::where('user_id', $bob->id)->get();
+        $bobNotifications = AppNotification::where('user_id', $bob->id)->get();
         $this->assertCount(1, $bobNotifications);
 
         // Charlie receives the @todos notification
-        $charlieNotifications = \App\Models\AppNotification::where('user_id', $charlie->id)->get();
+        $charlieNotifications = AppNotification::where('user_id', $charlie->id)->get();
         $this->assertCount(1, $charlieNotifications);
     }
 

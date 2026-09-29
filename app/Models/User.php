@@ -28,6 +28,14 @@ class User extends Authenticatable
         'birth',
         'instagram',
         'spotify',
+        'spotify_id',
+        'spotify_access_token',
+        'spotify_refresh_token',
+        'spotify_token_expires_at',
+        'spotify_avatar_url',
+        'spotify_profile_url',
+        'spotify_display_name',
+        'favorite_music',
         'letterboxd_username',
         'letterboxd_last_synced_at',
         'xbox_gamertag',
@@ -44,6 +52,8 @@ class User extends Authenticatable
         'remember_token',
         'two_factor_secret',
         'two_factor_recovery_codes',
+        'spotify_access_token',
+        'spotify_refresh_token',
     ];
 
     protected function casts(): array
@@ -59,7 +69,16 @@ class User extends Authenticatable
             'last_seen_at' => 'datetime',
             'theme' => 'array',
             'notification_preferences' => 'array',
+            'spotify_token_expires_at' => 'datetime',
+            'favorite_music' => 'array',
+            'spotify_access_token' => 'encrypted',
+            'spotify_refresh_token' => 'encrypted',
         ];
+    }
+
+    public function hasSpotifyConnected(): bool
+    {
+        return ! empty($this->spotify_refresh_token);
     }
 
     public function getAvatarUrlAttribute(?string $value): ?string

@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\PostController;
 use App\Http\Controllers\Api\PostLikeController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\PushSubscriptionController;
+use App\Http\Controllers\Api\SpotifyController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\XboxController;
 use Illuminate\Support\Facades\Broadcast;
@@ -33,6 +34,9 @@ Route::post('/auth/login', [LoginController::class, 'login']);
 Route::post('/auth/register', [RegisterController::class, 'register']);
 Route::post('/auth/impersonate', [ImpersonateController::class, 'impersonate']);
 Route::get('/auth/dev-users', [ImpersonateController::class, 'devUsers']);
+
+// Spotify public callback (redirect from Spotify OAuth)
+Route::match(['get', 'post'], '/spotify/callback', [SpotifyController::class, 'callback']);
 
 // Authenticated routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -49,6 +53,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/profile/password', [ProfileController::class, 'updatePassword']);
         Route::post('/profile/theme-background', [ProfileController::class, 'uploadThemeBackground']);
         Route::delete('/profile/theme', [ProfileController::class, 'resetTheme']);
+        Route::put('/profile/favorite-music', [SpotifyController::class, 'updateFavoriteMusic']);
+        Route::delete('/profile/favorite-music', [SpotifyController::class, 'removeFavoriteMusic']);
+        Route::get('/spotify/auth-url', [SpotifyController::class, 'authUrl']);
+        Route::post('/spotify/disconnect', [SpotifyController::class, 'disconnect']);
+        Route::get('/spotify/search', [SpotifyController::class, 'search']);
         Route::post('/profile/letterboxd/connect', [LetterboxdController::class, 'connect']);
         Route::post('/profile/letterboxd/disconnect', [LetterboxdController::class, 'disconnect']);
         Route::post('/profile/letterboxd/sync', [LetterboxdController::class, 'sync']);
@@ -62,6 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/users', [UserController::class, 'index']);
         Route::get('/users/online', [UserController::class, 'online']);
         Route::get('/users/{user:username}', [UserController::class, 'show']);
+        Route::get('/users/{user:username}/spotify-status', [SpotifyController::class, 'currentlyPlaying']);
 
         // Interests
         Route::get('/interests', [InterestController::class, 'index']);
