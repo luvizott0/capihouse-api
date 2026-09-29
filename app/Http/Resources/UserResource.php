@@ -34,6 +34,7 @@ class UserResource extends JsonResource
             'spotify_avatar_url' => $this->spotify_avatar_url,
             'spotify_profile_url' => $this->spotify_profile_url,
             'favorite_music' => $this->favorite_music,
+            'spotify_current_track' => Cache::get("user_spotify_track_{$this->id}"),
             'letterboxd_username' => $this->letterboxd_username,
             'letterboxd_last_synced_at' => $this->letterboxd_last_synced_at,
             'letterboxd_is_syncing' => Cache::has("letterboxd_syncing_{$this->id}"),

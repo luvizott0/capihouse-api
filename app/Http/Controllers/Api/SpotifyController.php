@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\PostCreated;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
+use App\Models\Hashtag;
+use App\Models\Post;
 use App\Models\User;
 use App\Services\SpotifyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class SpotifyController extends Controller
 {
@@ -204,5 +208,93 @@ class SpotifyController extends Controller
         $data = $this->spotifyService->getCurrentlyPlaying($user);
 
         return response()->json($data);
+    }
+
+    /**
+     * Publica uma música do Spotify como um post no feed (repost/compartilhamento de música).
+     */
+    public function repostMusic(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'track' => 'required|array',
+            'track.title' => 'required|string|max:255',
+            'track.artist' => 'required|string|max:255',
+            'track.album' => 'nullable|string|max:255',
+            'track.album_art' => 'nullable|string|max:1000',
+            'track.spotify_url' => 'nullable|string|max:1000',
+            'track.preview_url' => 'nullable|string|max:1000',
+            'track.duration_ms' => 'nullable|integer',
+            'track.id' => 'nullable|string|max:255',
+            'content' => 'nullable|string|max:2000',
+            'feeling_name' => 'nullable|string|max:15',
+            'feeling_emoji' => 'nullable|string|max:32',
+            'hashtags' => 'nullable|array',
+            'hashtags.*' => 'string|max:50',
+            'from_user' => 'nullable|string|max:255',
+        ]);
+
+        $user = $request->user();
+        $track = $validated['track'];
+        $trackId = $track['id'] ?? Str::uuid()->toString();
+
+        $post = Post::create([
+            'user_id' => $user->id,
+            'category' => 'feed',
+            'entertainment_type' => 'music',
+            'external_source' => 'spotify',
+            'external_id' => 'spotify:'.$trackId.':'.now()->timestamp,
+            'content' => $validated['content'] ?? null,
+            'metadata' => [
+                'track_id' => $trackId,
+                'track_title' => $track['title'],
+                'artist' => $track['artist'],
+                'album' => $track['album'] ?? '',
+                'album_art' => $track['album_art'] ?? null,
+                'spotify_url' => $track['spotify_url'] ?? null,
+                'preview_url' => $track['preview_url'] ?? null,
+                'duration_ms' => $track['duration_ms'] ?? 0,
+                'reposted_from' => $validated['from_user'] ?? null,
+            ],
+            'watched_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        if (! empty($validated['feeling_name'])) {
+            $post->feeling()->create([
+                'name' => $validated['feeling_name'],
+                'emoji' => $validated['feeling_emoji'] ?? '🎵',
+            ]);
+        }
+
+        if (! empty($validated['hashtags'])) {
+            foreach ($validated['hashtags'] as $tag) {
+                $hashtag = Hashtag::firstOrCreate(['name' => ltrim($tag, '#')]);
+                $post->hashtags()->attach($hashtag->id);
+            }
+        }
+
+        try {
+            $post->load([
+                'user',
+                'media',
+                'feeling',
+                'hashtags',
+                'mentions',
+                'comments.user',
+                'comments.parent.user',
+            ]);
+            $post->is_liked = false;
+            $post->likes_count = 0;
+            $post->comments_count = 0;
+            broadcast(new PostCreated($post));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return response()->json([
+            'message' => 'Música compartilhada no feed com sucesso!',
+            'post' => $post,
+        ], 201);
     }
 }

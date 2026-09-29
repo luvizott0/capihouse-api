@@ -58,6 +58,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/spotify/auth-url', [SpotifyController::class, 'authUrl']);
         Route::post('/spotify/disconnect', [SpotifyController::class, 'disconnect']);
         Route::get('/spotify/search', [SpotifyController::class, 'search']);
+        Route::post('/spotify/repost', [SpotifyController::class, 'repostMusic']);
         Route::post('/profile/letterboxd/connect', [LetterboxdController::class, 'connect']);
         Route::post('/profile/letterboxd/disconnect', [LetterboxdController::class, 'disconnect']);
         Route::post('/profile/letterboxd/sync', [LetterboxdController::class, 'sync']);

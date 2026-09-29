@@ -170,4 +170,80 @@ class SpotifyFeatureTest extends TestCase
                 ],
             ]);
     }
+
+    public function test_returns_recently_played_when_not_currently_playing(): void
+    {
+        $this->user->update([
+            'spotify_id' => 'spot-123',
+            'spotify_access_token' => 'valid-access-token',
+            'spotify_refresh_token' => 'valid-refresh-token',
+            'spotify_token_expires_at' => now()->addHour(),
+        ]);
+
+        Http::fake([
+            'https://api.spotify.com/v1/me/player/currently-playing' => Http::response([], 204),
+            'https://api.spotify.com/v1/me/player/recently-played*' => Http::response([
+                'items' => [
+                    [
+                        'played_at' => now()->subMinutes(10)->toIso8601String(),
+                        'track' => [
+                            'id' => 'track-recent-1',
+                            'name' => 'Feel Good Inc',
+                            'duration_ms' => 222000,
+                            'external_urls' => ['spotify' => 'https://open.spotify.com/track/track-recent-1'],
+                            'artists' => [['name' => 'Gorillaz']],
+                            'album' => [
+                                'name' => 'Demon Days',
+                                'images' => [['url' => 'https://example.com/demondays.jpg']],
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/users/{$this->user->username}/spotify-status");
+
+        $response->assertOk()
+            ->assertJsonPath('is_playing', false)
+            ->assertJsonPath('is_recent', true)
+            ->assertJsonPath('title', 'Feel Good Inc')
+            ->assertJsonPath('artist', 'Gorillaz');
+    }
+
+    public function test_can_repost_music_to_feed(): void
+    {
+        $payload = [
+            'track' => [
+                'id' => 'spot-song-77',
+                'title' => 'Starman',
+                'artist' => 'David Bowie',
+                'album' => 'The Rise and Fall of Ziggy Stardust',
+                'album_art' => 'https://example.com/bowie.jpg',
+                'spotify_url' => 'https://open.spotify.com/track/spot-song-77',
+            ],
+            'content' => 'Que obra de arte atemporal!',
+            'feeling_name' => 'Nostálgico',
+            'feeling_emoji' => '🚀',
+            'hashtags' => ['classic', 'bowie'],
+            'from_user' => 'amigo_da_casa',
+        ];
+
+        $response = $this->actingAs($this->user)
+            ->postJson('/api/spotify/repost', $payload);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('post.entertainment_type', 'music')
+            ->assertJsonPath('post.external_source', 'spotify')
+            ->assertJsonPath('post.content', 'Que obra de arte atemporal!')
+            ->assertJsonPath('post.metadata.track_title', 'Starman')
+            ->assertJsonPath('post.metadata.reposted_from', 'amigo_da_casa');
+
+        $this->assertDatabaseHas('posts', [
+            'user_id' => $this->user->id,
+            'entertainment_type' => 'music',
+            'external_source' => 'spotify',
+        ]);
+    }
 }

@@ -45,7 +45,7 @@ class SpotifyService
             'client_id' => $this->clientId,
             'response_type' => 'code',
             'redirect_uri' => $this->redirectUri,
-            'scope' => 'user-read-currently-playing user-read-playback-state',
+            'scope' => 'user-read-currently-playing user-read-playback-state user-read-recently-played',
             'state' => $state,
             'show_dialog' => 'true',
         ]);
@@ -313,7 +313,7 @@ class SpotifyService
     public function getCurrentlyPlaying(User $user): array
     {
         if (! $user->hasSpotifyConnected()) {
-            return ['is_playing' => false];
+            return ['is_playing' => false, 'has_spotify' => false];
         }
 
         $cacheKey = "spotify_now_playing_{$user->id}";
@@ -325,7 +325,7 @@ class SpotifyService
 
         $token = $this->getValidUserAccessToken($user);
         if (! $token) {
-            $payload = ['is_playing' => false];
+            $payload = ['is_playing' => false, 'has_spotify' => false];
             Cache::put($cacheKey, $payload, 15);
             Cache::forget("user_spotify_track_{$user->id}");
 
@@ -337,62 +337,100 @@ class SpotifyService
                 ->timeout(2)
                 ->get('https://api.spotify.com/v1/me/player/currently-playing');
 
-            // 204 No Content = nada tocando no momento
-            if ($response->status() === 204 || ! $response->successful()) {
-                $payload = ['is_playing' => false];
-                Cache::put($cacheKey, $payload, 12);
-                Cache::forget("user_spotify_track_{$user->id}");
-
-                return $payload;
-            }
-
-            $data = $response->json();
+            $data = $response->successful() ? $response->json() : null;
             $isPlaying = (bool) ($data['is_playing'] ?? false);
             $item = $data['item'] ?? null;
 
-            if (! $isPlaying || ! $item) {
-                $payload = ['is_playing' => false];
-                Cache::put($cacheKey, $payload, 12);
-                Cache::forget("user_spotify_track_{$user->id}");
+            if ($isPlaying && $item) {
+                $artists = collect($item['artists'] ?? [])->pluck('name')->join(', ');
+                $albumArt = $item['album']['images'][0]['url'] ?? null;
+                if (isset($item['album']['images'][1])) {
+                    $albumArt = $item['album']['images'][1]['url'];
+                }
 
-                return $payload;
+                $trackData = [
+                    'is_playing' => true,
+                    'is_recent' => false,
+                    'has_spotify' => true,
+                    'track_id' => $item['id'] ?? null,
+                    'title' => $item['name'] ?? '',
+                    'artist' => $artists,
+                    'album' => $item['album']['name'] ?? '',
+                    'album_art' => $albumArt,
+                    'spotify_url' => $item['external_urls']['spotify'] ?? null,
+                    'progress_ms' => $data['progress_ms'] ?? 0,
+                    'duration_ms' => $item['duration_ms'] ?? 0,
+                    'preview_url' => $item['preview_url'] ?? null,
+                    'fetched_at' => now()->timestamp,
+                ];
+
+                Cache::put($cacheKey, $trackData, 10);
+
+                // Disponibiliza para a listagem rápida de online users
+                Cache::put("user_spotify_track_{$user->id}", [
+                    'is_playing' => true,
+                    'title' => $trackData['title'],
+                    'artist' => $trackData['artist'],
+                    'spotify_url' => $trackData['spotify_url'],
+                ], 45);
+
+                return $trackData;
             }
 
-            $artists = collect($item['artists'] ?? [])->pluck('name')->join(', ');
-            $albumArt = $item['album']['images'][0]['url'] ?? null;
-            if (isset($item['album']['images'][1])) {
-                $albumArt = $item['album']['images'][1]['url'];
+            // Não está tocando no momento: busca a última música tocada recentemente
+            $recentResponse = Http::withToken($token)
+                ->timeout(2)
+                ->get('https://api.spotify.com/v1/me/player/recently-played', [
+                    'limit' => 1,
+                ]);
+
+            if ($recentResponse->successful()) {
+                $recentItem = $recentResponse->json('items.0');
+                $recentTrack = $recentItem['track'] ?? null;
+
+                if ($recentTrack) {
+                    $artists = collect($recentTrack['artists'] ?? [])->pluck('name')->join(', ');
+                    $albumArt = $recentTrack['album']['images'][0]['url'] ?? null;
+                    if (isset($recentTrack['album']['images'][1])) {
+                        $albumArt = $recentTrack['album']['images'][1]['url'];
+                    }
+
+                    $recentData = [
+                        'is_playing' => false,
+                        'is_recent' => true,
+                        'has_spotify' => true,
+                        'track_id' => $recentTrack['id'] ?? null,
+                        'title' => $recentTrack['name'] ?? '',
+                        'artist' => $artists,
+                        'album' => $recentTrack['album']['name'] ?? '',
+                        'album_art' => $albumArt,
+                        'spotify_url' => $recentTrack['external_urls']['spotify'] ?? null,
+                        'duration_ms' => $recentTrack['duration_ms'] ?? 0,
+                        'played_at' => $recentItem['played_at'] ?? null,
+                        'preview_url' => $recentTrack['preview_url'] ?? null,
+                        'fetched_at' => now()->timestamp,
+                    ];
+
+                    Cache::put($cacheKey, $recentData, 15);
+                    Cache::forget("user_spotify_track_{$user->id}");
+
+                    return $recentData;
+                }
             }
 
-            $trackData = [
-                'is_playing' => true,
-                'track_id' => $item['id'] ?? null,
-                'title' => $item['name'] ?? '',
-                'artist' => $artists,
-                'album' => $item['album']['name'] ?? '',
-                'album_art' => $albumArt,
-                'spotify_url' => $item['external_urls']['spotify'] ?? null,
-                'progress_ms' => $data['progress_ms'] ?? 0,
-                'duration_ms' => $item['duration_ms'] ?? 0,
-                'preview_url' => $item['preview_url'] ?? null,
-                'fetched_at' => now()->timestamp,
+            // Nenhuma música recente encontrada (conta sem reproduções recentes)
+            $payload = [
+                'is_playing' => false,
+                'is_recent' => false,
+                'has_spotify' => true,
             ];
+            Cache::put($cacheKey, $payload, 15);
+            Cache::forget("user_spotify_track_{$user->id}");
 
-            // Cache curto de 10 segundos
-            Cache::put($cacheKey, $trackData, 10);
-
-            // Disponibiliza para a listagem rápida de online users (TTL 45 segundos)
-            Cache::put("user_spotify_track_{$user->id}", [
-                'is_playing' => true,
-                'title' => $trackData['title'],
-                'artist' => $trackData['artist'],
-                'spotify_url' => $trackData['spotify_url'],
-            ], 45);
-
-            return $trackData;
+            return $payload;
         } catch (Exception $e) {
-            Log::warning("Erro ao buscar playback Spotify do usuário #{$user->id}: ".$e->getMessage());
-            $payload = ['is_playing' => false];
+            Log::warning("Erro ao buscar playback/recent Spotify do usuário #{$user->id}: ".$e->getMessage());
+            $payload = ['is_playing' => false, 'has_spotify' => true];
             Cache::put($cacheKey, $payload, 15);
 
             return $payload;
