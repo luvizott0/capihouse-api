@@ -335,7 +335,7 @@ class SpotifyService
 
         try {
             $response = Http::withToken($token)
-                ->timeout(2)
+                ->timeout(4)
                 ->get('https://api.spotify.com/v1/me/player/currently-playing');
 
             $data = $response->successful() ? $response->json() : null;
@@ -380,7 +380,7 @@ class SpotifyService
 
             // Não está tocando no momento: busca a última música tocada recentemente
             $recentResponse = Http::withToken($token)
-                ->timeout(2)
+                ->timeout(4)
                 ->get('https://api.spotify.com/v1/me/player/recently-played', [
                     'limit' => 1,
                 ]);
@@ -417,6 +417,8 @@ class SpotifyService
 
                     return $recentData;
                 }
+            } else {
+                Log::warning("Falha ao buscar recently-played do Spotify para usuário #{$user->id} (Status {$recentResponse->status()}): ".$recentResponse->body());
             }
 
             // Nenhuma música recente encontrada (conta sem reproduções recentes)
