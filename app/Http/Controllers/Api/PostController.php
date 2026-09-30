@@ -12,7 +12,9 @@ use App\Models\Hashtag;
 use App\Models\Post;
 use App\Services\ImageOptimizerService;
 use App\Services\MentionService;
+use App\Services\StorageHealthService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class PostController extends Controller
 {
@@ -274,6 +276,15 @@ class PostController extends Controller
             'poll.options.*.max' => 'Cada opção da votação pode ter no máximo 100 caracteres.',
         ]);
 
+        if ($request->hasFile('media')) {
+            $storageHealth = app(StorageHealthService::class)->check();
+            if (! $storageHealth['available']) {
+                return response()->json([
+                    'message' => 'O servidor de armazenamento (NAS) está temporariamente offline. Não é possível enviar fotos ou vídeos no momento. Remova os arquivos de mídia e publique apenas o conteúdo de texto.',
+                ], 503);
+            }
+        }
+
         $repostId = $request->input('repost_of_id');
         if ($repostId) {
             $originalPost = Post::find($repostId);
@@ -360,16 +371,25 @@ class PostController extends Controller
         // Medias
         if ($request->hasFile('media')) {
             $disk = config('filesystems.default', 'public');
-            foreach ($request->file('media') as $file) {
-                $mime = $file->getMimeType();
-                $type = str_starts_with($mime, 'video/') ? MediaType::VIDEO : MediaType::IMAGE;
-                $path = ImageOptimizerService::storeOptimized($file, "posts/{$post->id}", $disk);
+            try {
+                foreach ($request->file('media') as $file) {
+                    $mime = $file->getMimeType();
+                    $type = str_starts_with($mime, 'video/') ? MediaType::VIDEO : MediaType::IMAGE;
+                    $path = ImageOptimizerService::storeOptimized($file, "posts/{$post->id}", $disk);
 
-                $post->media()->create([
-                    'path' => $path,
-                    'type' => $type,
-                    'collection_name' => 'post_media',
-                ]);
+                    $post->media()->create([
+                        'path' => $path,
+                        'type' => $type,
+                        'collection_name' => 'post_media',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::error('Erro ao armazenar mídia do post: '.$e->getMessage());
+                $post->delete();
+
+                return response()->json([
+                    'message' => 'Ocorreu uma falha ao enviar os arquivos para o servidor de armazenamento (NAS). O post não foi publicado. Tente novamente mais tarde sem fotos.',
+                ], 503);
             }
         }
 
@@ -472,6 +492,15 @@ class PostController extends Controller
             return response()->json(['message' => 'O post precisa ter texto, mídia ou votação.'], 422);
         }
 
+        if ($request->hasFile('media')) {
+            $storageHealth = app(StorageHealthService::class)->check();
+            if (! $storageHealth['available']) {
+                return response()->json([
+                    'message' => 'O servidor de armazenamento (NAS) está temporariamente offline. Não é possível enviar novas fotos ou vídeos no momento.',
+                ], 503);
+            }
+        }
+
         $oldContent = $post->content;
         $post->update([
             'content' => $request->input('content'),
@@ -488,16 +517,24 @@ class PostController extends Controller
         // Add new media
         if ($request->hasFile('media')) {
             $disk = config('filesystems.default', 'public');
-            foreach ($request->file('media') as $file) {
-                $mime = $file->getMimeType();
-                $type = str_starts_with($mime, 'video/') ? MediaType::VIDEO : MediaType::IMAGE;
-                $path = ImageOptimizerService::storeOptimized($file, "posts/{$post->id}", $disk);
+            try {
+                foreach ($request->file('media') as $file) {
+                    $mime = $file->getMimeType();
+                    $type = str_starts_with($mime, 'video/') ? MediaType::VIDEO : MediaType::IMAGE;
+                    $path = ImageOptimizerService::storeOptimized($file, "posts/{$post->id}", $disk);
 
-                $post->media()->create([
-                    'path' => $path,
-                    'type' => $type,
-                    'collection_name' => 'post_media',
-                ]);
+                    $post->media()->create([
+                        'path' => $path,
+                        'type' => $type,
+                        'collection_name' => 'post_media',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::error('Erro ao armazenar mídia na edição: '.$e->getMessage());
+
+                return response()->json([
+                    'message' => 'Ocorreu uma falha ao enviar as novas mídias para o servidor de armazenamento (NAS). Tente novamente mais tarde.',
+                ], 503);
             }
         }
 

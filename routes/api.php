@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\PostLikeController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\SpotifyController;
+use App\Http\Controllers\Api\SystemStatusController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\XboxController;
 use Illuminate\Support\Facades\Broadcast;
@@ -81,6 +82,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // Interests
         Route::get('/interests', [InterestController::class, 'index']);
         Route::post('/profile/interests', [InterestController::class, 'sync']);
+
+        // System Status
+        Route::get('/system/storage-status', [SystemStatusController::class, 'storageStatus']);
 
         // Posts
         Route::get('/posts', [PostController::class, 'index']);
