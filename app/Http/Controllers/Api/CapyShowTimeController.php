@@ -211,19 +211,25 @@ class CapyShowTimeController extends Controller
             'episode_id' => 'required|exists:capy_episodes,id',
             'rating' => 'nullable|numeric|min:1|max:10',
             'is_watched' => 'nullable|boolean',
+            'remove_rating' => 'nullable|boolean',
         ]);
 
         $user = $request->user();
         $episode = CapyEpisode::findOrFail($validated['episode_id']);
 
-        if (array_key_exists('rating', $validated) && $validated['rating'] === null) {
-            $progress = $this->service->removeEpisodeRating($user, $episode);
+        $rating = isset($validated['rating']) ? (float) $validated['rating'] : null;
+        $isWatched = $validated['is_watched'] ?? true;
+
+        if (!empty($validated['remove_rating'])) {
+            $progress = $this->service->rateOrWatchEpisode($user, $episode, null, $isWatched);
+            $progress->rating = null;
+            $progress->save();
         } else {
             $progress = $this->service->rateOrWatchEpisode(
                 $user,
                 $episode,
-                isset($validated['rating']) ? (float) $validated['rating'] : null,
-                $validated['is_watched'] ?? true
+                $rating,
+                $isWatched
             );
         }
 

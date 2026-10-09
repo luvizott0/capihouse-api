@@ -130,4 +130,42 @@ class CapyShowTimeTest extends TestCase
         $this->assertTrue($likeResponse->json('liked'));
         $this->assertEquals(1, $likeResponse->json('likes_count'));
     }
+
+    public function test_user_can_mark_watched_without_rating(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 77777,
+            'name' => 'Watch Without Rating Test',
+        ]);
+
+        $season = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+        ]);
+
+        $episode = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'name' => 'Episódio sem nota',
+        ]);
+
+        // Marcar como visto sem nota (rating omitido ou null)
+        $response = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/episodes/rate', [
+            'episode_id' => $episode->id,
+            'is_watched' => true,
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertTrue($response->json('progress.is_watched'));
+        $this->assertNull($response->json('progress.rating'));
+
+        $this->assertDatabaseHas('capy_user_episodes', [
+            'user_id' => $this->user->id,
+            'episode_id' => $episode->id,
+            'is_watched' => 1,
+            'rating' => null,
+        ]);
+    }
 }
