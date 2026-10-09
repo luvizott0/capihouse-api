@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
+use App\Events\PostCreated;
 use App\Models\CapyEpisode;
 use App\Models\CapyEpisodeComment;
 use App\Models\CapyEpisodeCommentLike;
@@ -10,12 +10,15 @@ use App\Models\CapySeason;
 use App\Models\CapySeries;
 use App\Models\CapyUserEpisode;
 use App\Models\CapyUserSeries;
+use App\Models\Post;
 use App\Models\User;
 use App\Services\CapyShowTimeService;
+use App\Services\NotificationDispatcherService;
 use App\Services\TmdbService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CapyShowTimeController extends Controller
 {
@@ -236,6 +239,48 @@ class CapyShowTimeController extends Controller
         // Recalcular médias da temporada e série para o usuário
         $ratings = $this->service->getUserSeriesRatings($user->id, $episode->series_id);
 
+        // Alimentar o Feed de Entretenimento da Capihouse em tempo real
+        if ($isWatched) {
+            try {
+                $series = $episode->series;
+                if ($series) {
+                    $epCode = sprintf('S%02dE%02d', $episode->season_number, $episode->episode_number);
+                    $content = $rating
+                        ? "Assistiu e avaliou o episódio {$epCode} ({$episode->name}) de {$series->name} com nota {$rating} ★."
+                        : "Assistiu o episódio {$epCode} ({$episode->name}) de {$series->name}.";
+
+                    $post = Post::updateOrCreate(
+                        [
+                            'user_id' => $user->id,
+                            'external_source' => 'capyshowtime',
+                            'external_id' => "capyshowtime:ep:{$episode->id}:user:{$user->id}",
+                        ],
+                        [
+                            'category' => 'entertainment',
+                            'entertainment_type' => 'series',
+                            'watched_at' => now(),
+                            'content' => $content,
+                            'metadata' => [
+                                'series_id' => $series->id,
+                                'tmdb_id' => $series->tmdb_id,
+                                'series_name' => $series->name,
+                                'season_number' => $episode->season_number,
+                                'episode_number' => $episode->episode_number,
+                                'episode_name' => $episode->name,
+                                'poster_url' => $series->poster_url,
+                                'rating' => $rating,
+                            ],
+                        ]
+                    );
+
+                    $post->load('user:id,name,username,avatar_url');
+                    broadcast(new PostCreated($post));
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Erro ao sincronizar episódio assistido com Capihouse: ' . $e->getMessage());
+            }
+        }
+
         return response()->json([
             'message' => 'Progresso atualizado',
             'progress' => [
@@ -374,7 +419,38 @@ class CapyShowTimeController extends Controller
             'is_spoiler' => $validated['is_spoiler'] ?? false,
         ]);
 
-        $comment->load('user:id,name,username,avatar_url');
+        $comment->load('user:id,name,username,avatar_url', 'episode.series');
+
+        // Notificar amigos da Capihouse que também comentaram no mesmo episódio
+        try {
+            $episode = $comment->episode;
+            $series = $episode?->series;
+            if ($episode && $series) {
+                $epCode = sprintf('S%02dE%02d', $episode->season_number, $episode->episode_number);
+                $otherCommenters = CapyEpisodeComment::where('episode_id', $episode->id)
+                    ->where('user_id', '!=', $request->user()->id)
+                    ->pluck('user_id')
+                    ->unique();
+
+                foreach ($otherCommenters as $recipientId) {
+                    NotificationDispatcherService::send(
+                        recipient: (int) $recipientId,
+                        type: 'capyshowtime_comment',
+                        title: 'CapyShowTime 📺',
+                        content: "{$request->user()->name} comentou no episódio {$epCode} de {$series->name}.",
+                        data: [
+                            'episode_id' => $episode->id,
+                            'series_id' => $series->id,
+                            'tmdb_id' => $series->tmdb_id,
+                            'comment_id' => $comment->id,
+                        ],
+                        url: "/series/{$series->tmdb_id}"
+                    );
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Erro ao enviar notificação de comentário do CapyShowTime: ' . $e->getMessage());
+        }
 
         return response()->json([
             'id' => $comment->id,
@@ -406,6 +482,33 @@ class CapyShowTimeController extends Controller
                 'user_id' => $user->id,
             ]);
             $liked = true;
+
+            // Notificar o autor do comentário na Capihouse
+            try {
+                $comment = CapyEpisodeComment::with('user', 'episode.series')->find($commentId);
+                if ($comment && $comment->user && $comment->user->id !== $user->id) {
+                    $episode = $comment->episode;
+                    $series = $episode?->series;
+                    $seriesName = $series ? $series->name : 'uma série';
+                    $epCode = $episode ? sprintf('S%02dE%02d', $episode->season_number, $episode->episode_number) : '';
+
+                    NotificationDispatcherService::send(
+                        recipient: $comment->user,
+                        type: 'capyshowtime_like',
+                        title: 'CapyShowTime 📺',
+                        content: "{$user->name} curtiu seu comentário no episódio {$epCode} de {$seriesName}!",
+                        data: [
+                            'comment_id' => $comment->id,
+                            'episode_id' => $episode?->id,
+                            'series_id' => $series?->id,
+                            'tmdb_id' => $series?->tmdb_id,
+                        ],
+                        url: $series ? "/series/{$series->tmdb_id}" : null
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Erro ao enviar notificação de curtida do CapyShowTime: ' . $e->getMessage());
+            }
         }
 
         $likesCount = CapyEpisodeCommentLike::where('comment_id', $commentId)->count();
