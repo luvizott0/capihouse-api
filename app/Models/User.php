@@ -290,4 +290,14 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Post::class, 'pinned_post_id');
     }
+
+    public function capyUserSeries()
+    {
+        return $this->hasMany(CapyUserSeries::class);
+    }
+
+    public function capyUserEpisodes()
+    {
+        return $this->hasMany(CapyUserEpisode::class);
+    }
 }

@@ -49,4 +49,10 @@ return [
         'api_key' => env('LASTFM_API_KEY'),
     ],
 
+    'tmdb' => [
+        'api_key' => env('TMDB_API_KEY'),
+        'read_token' => env('TMDB_READ_ACCESS_TOKEN'),
+        'language' => env('TMDB_LANGUAGE', 'pt-BR'),
+    ],
+
 ];

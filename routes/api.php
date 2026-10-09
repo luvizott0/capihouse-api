@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Auth\ImpersonateController;
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\LogoutController;
 use App\Http\Controllers\Api\Auth\RegisterController;
+use App\Http\Controllers\Api\CapyShowTimeController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\GameReviewController;
 use App\Http\Controllers\Api\GroupController;
@@ -147,6 +148,24 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/push/subscribe', [PushSubscriptionController::class, 'subscribe']);
         Route::post('/push/unsubscribe', [PushSubscriptionController::class, 'unsubscribe']);
         Route::post('/push/test', [PushSubscriptionController::class, 'test']);
+
+        // CapyShowTime (TV Show Time clone)
+        Route::prefix('capyshowtime')->group(function () {
+            Route::get('/search', [CapyShowTimeController::class, 'search']);
+            Route::get('/trending', [CapyShowTimeController::class, 'trending']);
+            Route::get('/popular', [CapyShowTimeController::class, 'popular']);
+            Route::get('/series/{tmdbId}', [CapyShowTimeController::class, 'showSeries']);
+            Route::get('/series/{tmdbId}/season/{seasonNumber}', [CapyShowTimeController::class, 'showSeason']);
+            Route::post('/series/status', [CapyShowTimeController::class, 'setStatus']);
+            Route::post('/episodes/rate', [CapyShowTimeController::class, 'rateEpisode']);
+            Route::get('/my-list', [CapyShowTimeController::class, 'myList']);
+            Route::get('/up-next', [CapyShowTimeController::class, 'upNext']);
+            Route::get('/episodes/{episodeId}/comments', [CapyShowTimeController::class, 'getEpisodeComments']);
+            Route::post('/episodes/comments', [CapyShowTimeController::class, 'addEpisodeComment']);
+            Route::post('/comments/{commentId}/like', [CapyShowTimeController::class, 'toggleCommentLike']);
+            Route::get('/community-activity', [CapyShowTimeController::class, 'communityActivity']);
+            Route::get('/users/{userId}', [CapyShowTimeController::class, 'userProfile']);
+        });
 
         // Admin
         Route::middleware('admin')->prefix('admin')->name('admin.')->group(function () {
