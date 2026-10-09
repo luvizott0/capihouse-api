@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Controller;
 use App\Events\PostCreated;
 use App\Models\CapyEpisode;
 use App\Models\CapyEpisodeComment;
