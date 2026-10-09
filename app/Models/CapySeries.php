@@ -35,6 +35,11 @@ class CapySeries extends Model
         'vote_average' => 'float',
     ];
 
+    protected $appends = [
+        'poster_url',
+        'backdrop_url',
+    ];
+
     public function seasons(): HasMany
     {
         return $this->hasMany(CapySeason::class, 'series_id')->orderBy('season_number');

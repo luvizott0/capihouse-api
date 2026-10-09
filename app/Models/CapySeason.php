@@ -30,6 +30,10 @@ class CapySeason extends Model
         'air_date' => 'date',
     ];
 
+    protected $appends = [
+        'poster_url',
+    ];
+
     public function series(): BelongsTo
     {
         return $this->belongsTo(CapySeries::class, 'series_id');
