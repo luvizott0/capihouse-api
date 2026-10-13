@@ -63,6 +63,38 @@ class CapyShowTimeController extends Controller
     }
 
     /**
+     * Lista de gêneros disponíveis no TMDB
+     */
+    public function genres(): JsonResponse
+    {
+        return response()->json($this->tmdb->getGenres());
+    }
+
+    /**
+     * Descobrir séries com filtros (gênero, nota TMDB, plataforma, ano, idioma, ordenação)
+     */
+    public function discover(Request $request): JsonResponse
+    {
+        $page = max(1, (int) $request->input('page', 1));
+        $filters = $request->only([
+            'sort_by',
+            'with_genres',
+            'min_rating',
+            'min_votes',
+            'watch_provider',
+            'watch_region',
+            'year_from',
+            'year_to',
+            'language',
+            'status',
+        ]);
+
+        $results = $this->tmdb->discover($filters, $page);
+
+        return response()->json($results);
+    }
+
+    /**
      * Detalhes de uma série específica, temporadas, status do usuário e médias
      */
     public function showSeries(int $tmdbId, Request $request): JsonResponse
@@ -203,6 +235,7 @@ class CapyShowTimeController extends Controller
         return response()->json([
             'message' => 'Status atualizado com sucesso',
             'status' => $userSeries->status,
+            'marked_episodes_watched' => $validated['status'] === 'completed',
         ]);
     }
 
@@ -585,10 +618,37 @@ class CapyShowTimeController extends Controller
             ->groupBy('status')
             ->pluck('count', 'status');
 
+        $seriesRatings = CapyUserEpisode::where('user_id', $userId)
+            ->whereNotNull('rating')
+            ->groupBy('series_id')
+            ->select('series_id', DB::raw('ROUND(AVG(rating), 1) as avg_rating'))
+            ->pluck('avg_rating', 'series_id');
+
+        $watchedCounts = CapyUserEpisode::where('user_id', $userId)
+            ->where('is_watched', true)
+            ->groupBy('series_id')
+            ->select('series_id', DB::raw('COUNT(*) as watched_count'))
+            ->pluck('watched_count', 'series_id');
+
         $userSeries = CapyUserSeries::with('series')
             ->where('user_id', $userId)
             ->orderByDesc('updated_at')
-            ->get();
+            ->get()
+            ->map(function ($us) use ($seriesRatings, $watchedCounts) {
+                $avgRating = $seriesRatings->get($us->series_id);
+                $watchedCount = $watchedCounts->get($us->series_id, 0);
+
+                return [
+                    'id' => $us->id,
+                    'user_id' => $us->user_id,
+                    'series_id' => $us->series_id,
+                    'status' => $us->status,
+                    'updated_at' => $us->updated_at,
+                    'user_rating' => $avgRating !== null ? (float) $avgRating : null,
+                    'watched_episodes_count' => (int) $watchedCount,
+                    'series' => $us->series,
+                ];
+            });
 
         return response()->json([
             'user' => $user,
@@ -604,5 +664,18 @@ class CapyShowTimeController extends Controller
             ],
             'series_list' => $userSeries,
         ]);
+    }
+
+    /**
+     * Lista de moradores/amigos da Capihouse para acesso rápido aos perfis
+     */
+    public function users(): JsonResponse
+    {
+        $users = User::select('id', 'name', 'username', 'avatar_url')
+            ->where('status', 'approved')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($users);
     }
 }

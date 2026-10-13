@@ -103,4 +103,101 @@ class TmdbService
 
         return $response->successful() ? $response->json() : null;
     }
+
+    /**
+     * Lista de gêneros de séries de TV do TMDB
+     */
+    public function getGenres(): array
+    {
+        $fallback = [
+            ['id' => 10759, 'name' => 'Ação e Aventura'],
+            ['id' => 16, 'name' => 'Animação'],
+            ['id' => 35, 'name' => 'Comédia'],
+            ['id' => 80, 'name' => 'Crime'],
+            ['id' => 99, 'name' => 'Documentário'],
+            ['id' => 18, 'name' => 'Drama'],
+            ['id' => 10751, 'name' => 'Família'],
+            ['id' => 10762, 'name' => 'Infantil'],
+            ['id' => 9648, 'name' => 'Mistério'],
+            ['id' => 10763, 'name' => 'Notícias'],
+            ['id' => 10764, 'name' => 'Reality'],
+            ['id' => 10765, 'name' => 'Sci-Fi & Fantasia'],
+            ['id' => 10766, 'name' => 'Novela'],
+            ['id' => 10767, 'name' => 'Talk Show'],
+            ['id' => 10768, 'name' => 'Guerra e Política'],
+            ['id' => 37, 'name' => 'Faroeste'],
+        ];
+
+        try {
+            $response = $this->client()->get('/genre/tv/list', $this->defaultParams());
+            if ($response->successful()) {
+                $genres = $response->json('genres');
+                if (!empty($genres)) {
+                    return ['genres' => $genres];
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('TMDB Genres Error: ' . $e->getMessage());
+        }
+
+        return ['genres' => $fallback];
+    }
+
+    /**
+     * Descobrir séries com filtros avançados no TMDB
+     */
+    public function discover(array $filters = [], int $page = 1): array
+    {
+        $params = array_merge($this->defaultParams(), [
+            'page' => $page,
+            'include_adult' => false,
+            'sort_by' => $filters['sort_by'] ?? 'popularity.desc',
+        ]);
+
+        if (!empty($filters['with_genres'])) {
+            $params['with_genres'] = $filters['with_genres'];
+        }
+
+        if (isset($filters['min_rating']) && $filters['min_rating'] !== '' && (float) $filters['min_rating'] > 0) {
+            $params['vote_average.gte'] = (float) $filters['min_rating'];
+            $params['vote_count.gte'] = (int) ($filters['min_votes'] ?? 50);
+        } elseif (($params['sort_by'] ?? '') === 'vote_average.desc') {
+            $params['vote_count.gte'] = (int) ($filters['min_votes'] ?? 100);
+        }
+
+        if (!empty($filters['watch_provider'])) {
+            $params['with_watch_providers'] = $filters['watch_provider'];
+            $params['watch_region'] = $filters['watch_region'] ?? 'BR';
+        }
+
+        if (!empty($filters['year_from'])) {
+            $params['first_air_date.gte'] = "{$filters['year_from']}-01-01";
+        }
+
+        if (!empty($filters['year_to'])) {
+            $params['first_air_date.lte'] = "{$filters['year_to']}-12-31";
+        }
+
+        if (!empty($filters['language'])) {
+            $params['with_original_language'] = $filters['language'];
+        }
+
+        if (isset($filters['status']) && $filters['status'] !== '') {
+            $params['with_status'] = $filters['status'];
+        }
+
+        try {
+            $response = $this->client()->get('/discover/tv', $params);
+
+            if ($response->successful()) {
+                return $response->json();
+            }
+
+            Log::warning('TMDB Discover Error: ' . $response->body());
+        } catch (\Throwable $e) {
+            Log::warning('TMDB Discover Exception: ' . $e->getMessage());
+        }
+
+        return ['results' => [], 'total_results' => 0, 'page' => $page, 'total_pages' => 0];
+    }
 }

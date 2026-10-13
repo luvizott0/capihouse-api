@@ -154,6 +154,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/search', [CapyShowTimeController::class, 'search']);
             Route::get('/trending', [CapyShowTimeController::class, 'trending']);
             Route::get('/popular', [CapyShowTimeController::class, 'popular']);
+            Route::get('/genres', [CapyShowTimeController::class, 'genres']);
+            Route::get('/discover', [CapyShowTimeController::class, 'discover']);
             Route::get('/series/{tmdbId}', [CapyShowTimeController::class, 'showSeries']);
             Route::get('/series/{tmdbId}/season/{seasonNumber}', [CapyShowTimeController::class, 'showSeason']);
             Route::post('/series/status', [CapyShowTimeController::class, 'setStatus']);
@@ -164,6 +166,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/episodes/comments', [CapyShowTimeController::class, 'addEpisodeComment']);
             Route::post('/comments/{commentId}/like', [CapyShowTimeController::class, 'toggleCommentLike']);
             Route::get('/community-activity', [CapyShowTimeController::class, 'communityActivity']);
+            Route::get('/users', [CapyShowTimeController::class, 'users']);
             Route::get('/users/{userId}', [CapyShowTimeController::class, 'userProfile']);
         });
 

@@ -139,10 +139,74 @@ class CapyShowTimeService
      */
     public function setSeriesStatus(User $user, CapySeries $series, string $status): CapyUserSeries
     {
-        return CapyUserSeries::updateOrCreate(
+        $userSeries = CapyUserSeries::updateOrCreate(
             ['user_id' => $user->id, 'series_id' => $series->id],
             ['status' => $status]
         );
+
+        if ($status === 'completed') {
+            $this->markAllSeriesEpisodesWatched($user, $series);
+        }
+
+        return $userSeries;
+    }
+
+    /**
+     * Sincroniza todas as temporadas regulares e marca todos os episódios da série como assistidos
+     */
+    public function markAllSeriesEpisodesWatched(User $user, CapySeries $series): void
+    {
+        $seasons = $series->seasons()->where('season_number', '>', 0)->get();
+
+        foreach ($seasons as $season) {
+            $this->syncSeasonEpisodes($series, $season->season_number);
+        }
+
+        $episodes = $series->episodes()->where('season_number', '>', 0)->get();
+        if ($episodes->isEmpty()) {
+            return;
+        }
+
+        $now = now();
+
+        // Atualiza episódios já registrados para o usuário que estavam como não assistidos
+        CapyUserEpisode::where('user_id', $user->id)
+            ->where('series_id', $series->id)
+            ->where('is_watched', false)
+            ->update([
+                'is_watched' => true,
+                'watched_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+        // Busca quais episódios já têm registro para este usuário
+        $existingEpisodeIds = CapyUserEpisode::where('user_id', $user->id)
+            ->where('series_id', $series->id)
+            ->pluck('episode_id')
+            ->flip();
+
+        $toInsert = [];
+        foreach ($episodes as $ep) {
+            if (!$existingEpisodeIds->has($ep->id)) {
+                $toInsert[] = [
+                    'user_id' => $user->id,
+                    'series_id' => $series->id,
+                    'season_id' => $ep->season_id,
+                    'episode_id' => $ep->id,
+                    'is_watched' => true,
+                    'watched_at' => $now,
+                    'rating' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+
+        if (!empty($toInsert)) {
+            foreach (array_chunk($toInsert, 200) as $chunk) {
+                CapyUserEpisode::insert($chunk);
+            }
+        }
     }
 
     /**
