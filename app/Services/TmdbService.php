@@ -8,8 +8,11 @@ use Illuminate\Support\Facades\Log;
 class TmdbService
 {
     protected string $baseUrl = 'https://api.themoviedb.org/3';
+
     protected ?string $apiKey;
+
     protected ?string $readToken;
+
     protected string $language;
 
     public function __construct()
@@ -33,9 +36,10 @@ class TmdbService
     protected function defaultParams(): array
     {
         $params = ['language' => $this->language];
-        if (!$this->readToken && $this->apiKey) {
+        if (! $this->readToken && $this->apiKey) {
             $params['api_key'] = $this->apiKey;
         }
+
         return $params;
     }
 
@@ -58,7 +62,8 @@ class TmdbService
             return $response->json();
         }
 
-        Log::warning('TMDB Search Error: ' . $response->body());
+        Log::warning('TMDB Search Error: '.$response->body());
+
         return ['results' => [], 'total_results' => 0, 'page' => $page];
     }
 
@@ -183,7 +188,7 @@ class TmdbService
             $response = $this->client()->get('/genre/tv/list', $this->defaultParams());
             if ($response->successful()) {
                 $genres = $response->json('genres');
-                if (!empty($genres) && is_array($genres)) {
+                if (! empty($genres) && is_array($genres)) {
                     $translated = array_map(function (array $g) use ($translationsById, $translationsByName) {
                         $id = $g['id'] ?? null;
                         $name = $g['name'] ?? '';
@@ -192,6 +197,7 @@ class TmdbService
                         } elseif (isset($translationsByName[$name])) {
                             $name = $translationsByName[$name];
                         }
+
                         return [
                             'id' => $id,
                             'name' => $name,
@@ -202,7 +208,7 @@ class TmdbService
                 }
             }
         } catch (\Throwable $e) {
-            Log::warning('TMDB Genres Error: ' . $e->getMessage());
+            Log::warning('TMDB Genres Error: '.$e->getMessage());
         }
 
         return ['genres' => $fallback];
@@ -219,7 +225,7 @@ class TmdbService
             'sort_by' => $filters['sort_by'] ?? 'popularity.desc',
         ]);
 
-        if (!empty($filters['with_genres'])) {
+        if (! empty($filters['with_genres'])) {
             $params['with_genres'] = $filters['with_genres'];
         }
 
@@ -230,20 +236,20 @@ class TmdbService
             $params['vote_count.gte'] = (int) ($filters['min_votes'] ?? 100);
         }
 
-        if (!empty($filters['watch_provider'])) {
+        if (! empty($filters['watch_provider'])) {
             $params['with_watch_providers'] = $filters['watch_provider'];
             $params['watch_region'] = $filters['watch_region'] ?? 'BR';
         }
 
-        if (!empty($filters['year_from'])) {
+        if (! empty($filters['year_from'])) {
             $params['first_air_date.gte'] = "{$filters['year_from']}-01-01";
         }
 
-        if (!empty($filters['year_to'])) {
+        if (! empty($filters['year_to'])) {
             $params['first_air_date.lte'] = "{$filters['year_to']}-12-31";
         }
 
-        if (!empty($filters['language'])) {
+        if (! empty($filters['language'])) {
             $params['with_original_language'] = $filters['language'];
         }
 
@@ -258,9 +264,9 @@ class TmdbService
                 return $response->json();
             }
 
-            Log::warning('TMDB Discover Error: ' . $response->body());
+            Log::warning('TMDB Discover Error: '.$response->body());
         } catch (\Throwable $e) {
-            Log::warning('TMDB Discover Exception: ' . $e->getMessage());
+            Log::warning('TMDB Discover Exception: '.$e->getMessage());
         }
 
         return ['results' => [], 'total_results' => 0, 'page' => $page, 'total_pages' => 0];

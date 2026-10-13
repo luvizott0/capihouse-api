@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CapyEpisode;
+use App\Models\CapyEpisodeComment;
 use App\Models\CapySeason;
 use App\Models\CapySeries;
 use App\Models\CapyUserEpisode;
@@ -576,14 +577,146 @@ class CapyShowTimeService
     }
 
     /**
-     * Retorna o feed recente de atividades da Capihouse (quem assistiu ou comentou)
+     * Retorna o feed recente de atividades relevantes (notas, comentários e conclusões de séries).
+     * Episódios apenas assistidos (sem nota) são ignorados para manter o feed focado no que é realmente legal.
      */
-    public function getCommunityActivity(int $limit = 20)
+    public function getCommunityActivity(int $limit = 30)
     {
-        return CapyUserEpisode::with(['user', 'series', 'episode'])
-            ->where('is_watched', true)
-            ->orderByDesc('watched_at')
+        // 1. Episódios avaliados (notas dadas pelos usuários)
+        $ratedEpisodes = CapyUserEpisode::with([
+            'user:id,name,username,avatar_url',
+            'series:id,tmdb_id,name,poster_path',
+            'episode:id,series_id,season_id,season_number,episode_number,name,still_path',
+        ])
+            ->whereNotNull('rating')
+            ->where('rating', '>', 0)
+            ->whereHas('user')
+            ->whereHas('series')
+            ->whereHas('episode')
+            ->orderByDesc('updated_at')
             ->limit($limit)
-            ->get();
+            ->get()
+            ->map(function ($ue) {
+                $time = $ue->watched_at ?? $ue->updated_at;
+
+                return [
+                    'id' => 'rating_'.$ue->id,
+                    'type' => 'rating',
+                    'timestamp' => $time ? $time->toISOString() : now()->toISOString(),
+                    'user' => [
+                        'id' => $ue->user->id,
+                        'name' => $ue->user->name,
+                        'username' => $ue->user->username,
+                        'avatar_url' => $ue->user->avatar_url,
+                    ],
+                    'series' => [
+                        'id' => $ue->series->id,
+                        'tmdb_id' => $ue->series->tmdb_id,
+                        'name' => $ue->series->name,
+                        'poster_url' => $ue->series->poster_url,
+                    ],
+                    'episode' => [
+                        'id' => $ue->episode->id,
+                        'season_number' => $ue->episode->season_number,
+                        'episode_number' => $ue->episode->episode_number,
+                        'name' => $ue->episode->name,
+                    ],
+                    'rating' => (float) $ue->rating,
+                    'comment' => null,
+                    'watched_at' => $time ? $time->diffForHumans() : 'recentemente',
+                ];
+            });
+
+        // 2. Comentários em episódios
+        $comments = CapyEpisodeComment::with([
+            'user:id,name,username,avatar_url',
+            'episode.series:id,tmdb_id,name,poster_path',
+        ])
+            ->whereHas('user')
+            ->whereHas('episode.series')
+            ->latest()
+            ->limit($limit)
+            ->get()
+            ->map(function ($c) {
+                $ep = $c->episode;
+                $series = $ep?->series;
+
+                return [
+                    'id' => 'comment_'.$c->id,
+                    'type' => 'comment',
+                    'timestamp' => $c->created_at ? $c->created_at->toISOString() : now()->toISOString(),
+                    'user' => [
+                        'id' => $c->user->id,
+                        'name' => $c->user->name,
+                        'username' => $c->user->username,
+                        'avatar_url' => $c->user->avatar_url,
+                    ],
+                    'series' => [
+                        'id' => $series->id,
+                        'tmdb_id' => $series->tmdb_id,
+                        'name' => $series->name,
+                        'poster_url' => $series->poster_url,
+                    ],
+                    'episode' => [
+                        'id' => $ep->id,
+                        'season_number' => $ep->season_number,
+                        'episode_number' => $ep->episode_number,
+                        'name' => $ep->name,
+                    ],
+                    'rating' => null,
+                    'comment' => [
+                        'id' => $c->id,
+                        'content' => $c->content,
+                        'is_spoiler' => (bool) $c->is_spoiler,
+                    ],
+                    'watched_at' => $c->created_at ? $c->created_at->diffForHumans() : 'recentemente',
+                ];
+            });
+
+        // 3. Conclusão de séries (status 'completed')
+        $completions = CapyUserSeries::with([
+            'user:id,name,username,avatar_url',
+            'series:id,tmdb_id,name,poster_path,number_of_seasons',
+        ])
+            ->where('status', 'completed')
+            ->whereHas('user')
+            ->whereHas('series')
+            ->orderByDesc('updated_at')
+            ->limit($limit)
+            ->get()
+            ->map(function ($us) {
+                $time = $us->updated_at;
+
+                return [
+                    'id' => 'completed_'.$us->id,
+                    'type' => 'completed',
+                    'timestamp' => $time ? $time->toISOString() : now()->toISOString(),
+                    'user' => [
+                        'id' => $us->user->id,
+                        'name' => $us->user->name,
+                        'username' => $us->user->username,
+                        'avatar_url' => $us->user->avatar_url,
+                    ],
+                    'series' => [
+                        'id' => $us->series->id,
+                        'tmdb_id' => $us->series->tmdb_id,
+                        'name' => $us->series->name,
+                        'poster_url' => $us->series->poster_url,
+                        'number_of_seasons' => $us->series->number_of_seasons,
+                    ],
+                    'episode' => null,
+                    'rating' => null,
+                    'comment' => null,
+                    'watched_at' => $time ? $time->diffForHumans() : 'recentemente',
+                ];
+            });
+
+        return collect()
+            ->concat($ratedEpisodes)
+            ->concat($comments)
+            ->concat($completions)
+            ->sortByDesc(fn ($item) => strtotime($item['timestamp']))
+            ->take($limit)
+            ->values();
     }
 }

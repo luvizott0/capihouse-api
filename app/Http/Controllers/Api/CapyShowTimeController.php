@@ -231,6 +231,38 @@ class CapyShowTimeController extends Controller
 
         $userSeries = $this->service->setSeriesStatus($user, $series, $validated['status']);
 
+        // Se marcou como concluída, sincroniza no Feed de Entretenimento da Capihouse
+        if ($validated['status'] === 'completed') {
+            try {
+                $post = Post::updateOrCreate(
+                    [
+                        'user_id' => $user->id,
+                        'external_source' => 'capyshowtime',
+                        'external_id' => "capyshowtime:series_completed:{$series->id}:user:{$user->id}",
+                    ],
+                    [
+                        'category' => 'entertainment',
+                        'entertainment_type' => 'series',
+                        'watched_at' => now(),
+                        'content' => "Concluiu a série {$series->name}! 🏆",
+                        'metadata' => [
+                            'type' => 'completed',
+                            'series_id' => $series->id,
+                            'tmdb_id' => $series->tmdb_id,
+                            'series_name' => $series->name,
+                            'poster_url' => $series->poster_url,
+                            'number_of_seasons' => $series->number_of_seasons,
+                        ],
+                    ]
+                );
+
+                $post->load('user:id,name,username,avatar_url');
+                broadcast(new PostCreated($post));
+            } catch (\Throwable $e) {
+                Log::warning('Erro ao criar post de conclusão de série no CapyShowTime: '.$e->getMessage());
+            }
+        }
+
         return response()->json([
             'message' => 'Status atualizado com sucesso',
             'status' => $userSeries->status,
@@ -272,15 +304,13 @@ class CapyShowTimeController extends Controller
         // Recalcular médias da temporada e série para o usuário
         $ratings = $this->service->getUserSeriesRatings($user->id, $episode->series_id);
 
-        // Alimentar o Feed de Entretenimento da Capihouse em tempo real
-        if ($isWatched) {
+        // Alimentar o Feed de Entretenimento da Capihouse apenas para avaliações com nota
+        if ($isWatched && $rating !== null) {
             try {
                 $series = $episode->series;
                 if ($series) {
                     $epCode = sprintf('S%02dE%02d', $episode->season_number, $episode->episode_number);
-                    $content = $rating
-                        ? "Assistiu e avaliou o episódio {$epCode} ({$episode->name}) de {$series->name} com nota {$rating} ★."
-                        : "Assistiu o episódio {$epCode} ({$episode->name}) de {$series->name}.";
+                    $content = "Assistiu e avaliou o episódio {$epCode} ({$episode->name}) de {$series->name} com nota {$rating} ★.";
 
                     $post = Post::updateOrCreate(
                         [
@@ -294,6 +324,7 @@ class CapyShowTimeController extends Controller
                             'watched_at' => now(),
                             'content' => $content,
                             'metadata' => [
+                                'type' => 'rating',
                                 'series_id' => $series->id,
                                 'tmdb_id' => $series->tmdb_id,
                                 'series_name' => $series->name,
@@ -310,8 +341,13 @@ class CapyShowTimeController extends Controller
                     broadcast(new PostCreated($post));
                 }
             } catch (\Throwable $e) {
-                Log::warning('Erro ao sincronizar episódio assistido com Capihouse: '.$e->getMessage());
+                Log::warning('Erro ao sincronizar avaliação com Capihouse: '.$e->getMessage());
             }
+        } elseif (! empty($validated['remove_rating']) || $rating === null) {
+            // Se a nota foi removida ou o episódio apenas marcado como visto sem nota, remove eventual post para manter o feed limpo
+            Post::where('external_source', 'capyshowtime')
+                ->where('external_id', "capyshowtime:ep:{$episode->id}:user:{$user->id}")
+                ->delete();
         }
 
         return response()->json([
@@ -524,9 +560,35 @@ class CapyShowTimeController extends Controller
                         url: "/series/{$series->tmdb_id}"
                     );
                 }
+
+                // Alimentar o Feed de Entretenimento da Capihouse com o novo comentário
+                $commentPreview = $comment->is_spoiler ? '[Contém spoiler]' : (mb_strlen($comment->content) > 120 ? mb_substr($comment->content, 0, 117).'...' : $comment->content);
+                $post = Post::create([
+                    'user_id' => $request->user()->id,
+                    'external_source' => 'capyshowtime',
+                    'external_id' => "capyshowtime:comment:{$comment->id}",
+                    'category' => 'entertainment',
+                    'entertainment_type' => 'series',
+                    'watched_at' => now(),
+                    'content' => "Comentou no episódio {$epCode} ({$episode->name}) de {$series->name}: \"{$commentPreview}\"",
+                    'metadata' => [
+                        'type' => 'comment',
+                        'series_id' => $series->id,
+                        'tmdb_id' => $series->tmdb_id,
+                        'series_name' => $series->name,
+                        'season_number' => $episode->season_number,
+                        'episode_number' => $episode->episode_number,
+                        'episode_name' => $episode->name,
+                        'poster_url' => $series->poster_url,
+                        'comment_id' => $comment->id,
+                        'is_spoiler' => (bool) $comment->is_spoiler,
+                    ],
+                ]);
+                $post->load('user:id,name,username,avatar_url');
+                broadcast(new PostCreated($post));
             }
         } catch (\Throwable $e) {
-            Log::warning('Erro ao enviar notificação de comentário do CapyShowTime: '.$e->getMessage());
+            Log::warning('Erro ao enviar notificação ou criar post de comentário do CapyShowTime: '.$e->getMessage());
         }
 
         return response()->json([
@@ -603,33 +665,7 @@ class CapyShowTimeController extends Controller
     {
         $activities = $this->service->getCommunityActivity(30);
 
-        $data = $activities->map(function ($act) {
-            return [
-                'id' => $act->id,
-                'user' => [
-                    'id' => $act->user->id,
-                    'name' => $act->user->name,
-                    'username' => $act->user->username,
-                    'avatar_url' => $act->user->avatar_url,
-                ],
-                'series' => [
-                    'id' => $act->series->id,
-                    'tmdb_id' => $act->series->tmdb_id,
-                    'name' => $act->series->name,
-                    'poster_url' => $act->series->poster_url,
-                ],
-                'episode' => [
-                    'id' => $act->episode->id,
-                    'season_number' => $act->episode->season_number,
-                    'episode_number' => $act->episode->episode_number,
-                    'name' => $act->episode->name,
-                ],
-                'rating' => $act->rating ? (float) $act->rating : null,
-                'watched_at' => $act->watched_at?->diffForHumans(),
-            ];
-        });
-
-        return response()->json($data);
+        return response()->json($activities);
     }
 
     /**

@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\CapyEpisode;
+use App\Models\CapyEpisodeComment;
 use App\Models\CapySeason;
 use App\Models\CapySeries;
+use App\Models\CapyUserSeries;
 use App\Models\User;
 use App\Services\CapyShowTimeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -175,6 +177,7 @@ class CapyShowTimeTest extends TestCase
             'tmdb_id' => 66666,
             'name' => 'Season Watch All Test',
             'number_of_seasons' => 1,
+            'synced_at' => now(),
         ]);
 
         $season = CapySeason::create([
@@ -226,6 +229,7 @@ class CapyShowTimeTest extends TestCase
             'tmdb_id' => 55555,
             'name' => 'Previous Episodes Watch Test',
             'number_of_seasons' => 1,
+            'synced_at' => now(),
         ]);
 
         $season = CapySeason::create([
@@ -287,5 +291,86 @@ class CapyShowTimeTest extends TestCase
             'episode_id' => $ep3->id,
             'is_watched' => 1,
         ]);
+    }
+
+    public function test_community_activity_only_shows_relevant_content(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 77777,
+            'name' => 'Feed Test Series',
+            'number_of_seasons' => 1,
+            'synced_at' => now(),
+        ]);
+
+        $season = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+            'name' => 'Temporada 1',
+        ]);
+
+        $epUnrated = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'name' => 'Episódio Sem Nota',
+        ]);
+
+        $epRated = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 2,
+            'name' => 'Episódio Com Nota',
+        ]);
+
+        $epCommented = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 3,
+            'name' => 'Episódio Comentado',
+        ]);
+
+        // 1. Episódio marcado como assistido SEM nota (não deve ir pro feed)
+        $this->service->rateOrWatchEpisode($this->user, $epUnrated, null, true);
+
+        // 2. Episódio avaliado COM nota (deve ir pro feed)
+        $this->service->rateOrWatchEpisode($this->user, $epRated, 9.0, true);
+
+        // 3. Comentário em episódio (deve ir pro feed)
+        CapyEpisodeComment::create([
+            'episode_id' => $epCommented->id,
+            'user_id' => $this->user->id,
+            'content' => 'Comentário muito relevante!',
+            'is_spoiler' => false,
+        ]);
+
+        // 4. Conclusão de série (deve ir pro feed)
+        CapyUserSeries::updateOrCreate(
+            ['user_id' => $this->user->id, 'series_id' => $series->id],
+            ['status' => 'completed']
+        );
+
+        $response = $this->actingAs($this->user, 'sanctum')->getJson('/api/capyshowtime/community-activity');
+
+        $response->assertStatus(200);
+        $data = $response->json();
+
+        // Deve conter exatamente 3 itens relevantes (rating, comment, completed), e NÃO o episódio sem nota
+        $this->assertCount(3, $data);
+
+        $types = array_column($data, 'type');
+        $this->assertContains('rating', $types);
+        $this->assertContains('comment', $types);
+        $this->assertContains('completed', $types);
+
+        // Verifica que o episódio sem nota não está presente nos itens
+        foreach ($data as $item) {
+            if ($item['type'] === 'rating') {
+                $this->assertEquals($epRated->id, $item['episode']['id']);
+                $this->assertEquals(9.0, $item['rating']);
+            }
+        }
     }
 }
