@@ -105,10 +105,61 @@ class TmdbService
     }
 
     /**
-     * Lista de gêneros de séries de TV do TMDB
+     * Lista de gêneros de séries de TV do TMDB (sempre traduzidos para português)
      */
     public function getGenres(): array
     {
+        $translationsById = [
+            10759 => 'Ação e Aventura',
+            16 => 'Animação',
+            35 => 'Comédia',
+            80 => 'Crime',
+            99 => 'Documentário',
+            18 => 'Drama',
+            10751 => 'Família',
+            10762 => 'Infantil',
+            9648 => 'Mistério',
+            10763 => 'Notícias',
+            10764 => 'Reality Show',
+            10765 => 'Ficção Científica e Fantasia',
+            10766 => 'Novela',
+            10767 => 'Entrevistas',
+            10768 => 'Guerra e Política',
+            37 => 'Faroeste',
+            28 => 'Ação',
+            12 => 'Aventura',
+            14 => 'Fantasia',
+            36 => 'História',
+            27 => 'Terror',
+            10402 => 'Música',
+            10749 => 'Romance',
+            878 => 'Ficção Científica',
+            10770 => 'Cinema TV',
+            53 => 'Suspense',
+            10752 => 'Guerra',
+        ];
+
+        $translationsByName = [
+            'Action & Adventure' => 'Ação e Aventura',
+            'Animation' => 'Animação',
+            'Comedy' => 'Comédia',
+            'Crime' => 'Crime',
+            'Documentary' => 'Documentário',
+            'Drama' => 'Drama',
+            'Family' => 'Família',
+            'Kids' => 'Infantil',
+            'Mystery' => 'Mistério',
+            'News' => 'Notícias',
+            'Reality' => 'Reality Show',
+            'Sci-Fi & Fantasy' => 'Ficção Científica e Fantasia',
+            'Sci-Fi & Fantasia' => 'Ficção Científica e Fantasia',
+            'Soap' => 'Novela',
+            'Talk' => 'Entrevistas',
+            'Talk Show' => 'Entrevistas',
+            'War & Politics' => 'Guerra e Política',
+            'Western' => 'Faroeste',
+        ];
+
         $fallback = [
             ['id' => 10759, 'name' => 'Ação e Aventura'],
             ['id' => 16, 'name' => 'Animação'],
@@ -120,10 +171,10 @@ class TmdbService
             ['id' => 10762, 'name' => 'Infantil'],
             ['id' => 9648, 'name' => 'Mistério'],
             ['id' => 10763, 'name' => 'Notícias'],
-            ['id' => 10764, 'name' => 'Reality'],
-            ['id' => 10765, 'name' => 'Sci-Fi & Fantasia'],
+            ['id' => 10764, 'name' => 'Reality Show'],
+            ['id' => 10765, 'name' => 'Ficção Científica e Fantasia'],
             ['id' => 10766, 'name' => 'Novela'],
-            ['id' => 10767, 'name' => 'Talk Show'],
+            ['id' => 10767, 'name' => 'Entrevistas'],
             ['id' => 10768, 'name' => 'Guerra e Política'],
             ['id' => 37, 'name' => 'Faroeste'],
         ];
@@ -132,8 +183,22 @@ class TmdbService
             $response = $this->client()->get('/genre/tv/list', $this->defaultParams());
             if ($response->successful()) {
                 $genres = $response->json('genres');
-                if (!empty($genres)) {
-                    return ['genres' => $genres];
+                if (!empty($genres) && is_array($genres)) {
+                    $translated = array_map(function (array $g) use ($translationsById, $translationsByName) {
+                        $id = $g['id'] ?? null;
+                        $name = $g['name'] ?? '';
+                        if ($id && isset($translationsById[$id])) {
+                            $name = $translationsById[$id];
+                        } elseif (isset($translationsByName[$name])) {
+                            $name = $translationsByName[$name];
+                        }
+                        return [
+                            'id' => $id,
+                            'name' => $name,
+                        ];
+                    }, $genres);
+
+                    return ['genres' => $translated];
                 }
             }
         } catch (\Throwable $e) {
