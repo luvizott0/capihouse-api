@@ -2,12 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
 use App\Events\PostCreated;
+use App\Http\Controllers\Controller;
 use App\Models\CapyEpisode;
 use App\Models\CapyEpisodeComment;
 use App\Models\CapyEpisodeCommentLike;
-use App\Models\CapySeason;
 use App\Models\CapySeries;
 use App\Models\CapyUserEpisode;
 use App\Models\CapyUserSeries;
@@ -26,8 +25,7 @@ class CapyShowTimeController extends Controller
     public function __construct(
         protected CapyShowTimeService $service,
         protected TmdbService $tmdb
-    ) {
-    }
+    ) {}
 
     /**
      * Busca de séries pelo TMDB
@@ -102,7 +100,7 @@ class CapyShowTimeController extends Controller
         $user = $request->user();
         $series = $this->service->syncSeriesFromTmdb($tmdbId);
 
-        if (!$series) {
+        if (! $series) {
             return response()->json(['message' => 'Série não encontrada'], 404);
         }
 
@@ -141,13 +139,13 @@ class CapyShowTimeController extends Controller
         $user = $request->user();
         $series = $this->service->syncSeriesFromTmdb($tmdbId);
 
-        if (!$series) {
+        if (! $series) {
             return response()->json(['message' => 'Série não encontrada'], 404);
         }
 
         $season = $this->service->syncSeasonEpisodes($series, $seasonNumber);
 
-        if (!$season) {
+        if (! $season) {
             return response()->json(['message' => 'Temporada não encontrada'], 404);
         }
 
@@ -221,12 +219,13 @@ class CapyShowTimeController extends Controller
         $user = $request->user();
         $series = $this->service->syncSeriesFromTmdb($validated['tmdb_id']);
 
-        if (!$series) {
+        if (! $series) {
             return response()->json(['message' => 'Série não encontrada'], 404);
         }
 
         if ($validated['status'] === 'remove') {
             $this->service->removeSeriesStatus($user, $series);
+
             return response()->json(['message' => 'Série removida da lista', 'status' => null]);
         }
 
@@ -257,7 +256,7 @@ class CapyShowTimeController extends Controller
         $rating = isset($validated['rating']) ? (float) $validated['rating'] : null;
         $isWatched = $validated['is_watched'] ?? true;
 
-        if (!empty($validated['remove_rating'])) {
+        if (! empty($validated['remove_rating'])) {
             $progress = $this->service->rateOrWatchEpisode($user, $episode, null, $isWatched);
             $progress->rating = null;
             $progress->save();
@@ -311,7 +310,7 @@ class CapyShowTimeController extends Controller
                     broadcast(new PostCreated($post));
                 }
             } catch (\Throwable $e) {
-                Log::warning('Erro ao sincronizar episódio assistido com Capihouse: ' . $e->getMessage());
+                Log::warning('Erro ao sincronizar episódio assistido com Capihouse: '.$e->getMessage());
             }
         }
 
@@ -325,6 +324,48 @@ class CapyShowTimeController extends Controller
             'season_average' => $ratings['seasons'][$episode->season_number]['average'] ?? null,
             'series_average' => $ratings['series_average'],
         ]);
+    }
+
+    /**
+     * Marcar todos os episódios de uma temporada como assistidos
+     */
+    public function markSeasonWatched(int $tmdbId, int $seasonNumber, Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $series = $this->service->syncSeriesFromTmdb($tmdbId);
+
+        if (! $series) {
+            return response()->json(['message' => 'Série não encontrada'], 404);
+        }
+
+        $result = $this->service->markSeasonEpisodesWatched($user, $series, $seasonNumber);
+
+        if (! $result) {
+            return response()->json(['message' => 'Temporada não encontrada'], 404);
+        }
+
+        return response()->json(array_merge([
+            'message' => 'Temporada marcada como assistida',
+        ], $result));
+    }
+
+    /**
+     * Marcar episódio e todos os episódios anteriores como assistidos
+     */
+    public function markPreviousEpisodes(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'episode_id' => 'required|exists:capy_episodes,id',
+        ]);
+
+        $user = $request->user();
+        $episode = CapyEpisode::with('series')->findOrFail($validated['episode_id']);
+
+        $result = $this->service->markPreviousEpisodesWatched($user, $episode);
+
+        return response()->json(array_merge([
+            'message' => 'Episódios anteriores marcados como assistidos',
+        ], $result));
     }
 
     /**
@@ -363,7 +404,9 @@ class CapyShowTimeController extends Controller
 
         foreach ($watchingSeries as $seriesId) {
             $series = CapySeries::find($seriesId);
-            if (!$series) continue;
+            if (! $series) {
+                continue;
+            }
 
             // Busca os IDs de episódios que o usuário já assistiu
             $watchedEpisodeIds = CapyUserEpisode::where('user_id', $user->id)
@@ -483,7 +526,7 @@ class CapyShowTimeController extends Controller
                 }
             }
         } catch (\Throwable $e) {
-            Log::warning('Erro ao enviar notificação de comentário do CapyShowTime: ' . $e->getMessage());
+            Log::warning('Erro ao enviar notificação de comentário do CapyShowTime: '.$e->getMessage());
         }
 
         return response()->json([
@@ -541,7 +584,7 @@ class CapyShowTimeController extends Controller
                     );
                 }
             } catch (\Throwable $e) {
-                Log::warning('Erro ao enviar notificação de curtida do CapyShowTime: ' . $e->getMessage());
+                Log::warning('Erro ao enviar notificação de curtida do CapyShowTime: '.$e->getMessage());
             }
         }
 

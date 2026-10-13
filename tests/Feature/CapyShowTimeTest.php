@@ -7,7 +7,6 @@ use App\Models\CapySeason;
 use App\Models\CapySeries;
 use App\Models\User;
 use App\Services\CapyShowTimeService;
-use App\Services\TmdbService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -16,6 +15,7 @@ class CapyShowTimeTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
+
     protected CapyShowTimeService $service;
 
     protected function setUp(): void
@@ -166,6 +166,126 @@ class CapyShowTimeTest extends TestCase
             'episode_id' => $episode->id,
             'is_watched' => 1,
             'rating' => null,
+        ]);
+    }
+
+    public function test_user_can_mark_entire_season_as_watched(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 66666,
+            'name' => 'Season Watch All Test',
+            'number_of_seasons' => 1,
+        ]);
+
+        $season = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+            'name' => 'Temporada 1',
+        ]);
+
+        $ep1 = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'name' => 'Episódio 1',
+        ]);
+
+        $ep2 = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 2,
+            'name' => 'Episódio 2',
+        ]);
+
+        $response = $this->actingAs($this->user, 'sanctum')->postJson("/api/capyshowtime/series/{$series->tmdb_id}/season/1/watch-all");
+
+        $response->assertStatus(200);
+        $response->assertJson([
+            'message' => 'Temporada marcada como assistida',
+            'season_number' => 1,
+        ]);
+
+        $this->assertDatabaseHas('capy_user_episodes', [
+            'user_id' => $this->user->id,
+            'episode_id' => $ep1->id,
+            'is_watched' => 1,
+        ]);
+
+        $this->assertDatabaseHas('capy_user_episodes', [
+            'user_id' => $this->user->id,
+            'episode_id' => $ep2->id,
+            'is_watched' => 1,
+        ]);
+    }
+
+    public function test_user_can_mark_previous_episodes_as_watched(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 55555,
+            'name' => 'Previous Episodes Watch Test',
+            'number_of_seasons' => 1,
+        ]);
+
+        $season = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+            'name' => 'Temporada 1',
+        ]);
+
+        $ep1 = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'name' => 'Ep 1',
+        ]);
+
+        $ep2 = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 2,
+            'name' => 'Ep 2',
+        ]);
+
+        $ep3 = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 3,
+            'name' => 'Ep 3',
+        ]);
+
+        $response = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/episodes/watch-previous', [
+            'episode_id' => $ep2->id,
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJson([
+            'message' => 'Episódios anteriores marcados como assistidos',
+            'target_episode_id' => $ep2->id,
+        ]);
+
+        // Ep 1 e Ep 2 devem estar assistidos
+        $this->assertDatabaseHas('capy_user_episodes', [
+            'user_id' => $this->user->id,
+            'episode_id' => $ep1->id,
+            'is_watched' => 1,
+        ]);
+
+        $this->assertDatabaseHas('capy_user_episodes', [
+            'user_id' => $this->user->id,
+            'episode_id' => $ep2->id,
+            'is_watched' => 1,
+        ]);
+
+        // Ep 3 NÃO deve ter sido marcado
+        $this->assertDatabaseMissing('capy_user_episodes', [
+            'user_id' => $this->user->id,
+            'episode_id' => $ep3->id,
+            'is_watched' => 1,
         ]);
     }
 }

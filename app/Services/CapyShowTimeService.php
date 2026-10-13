@@ -3,21 +3,16 @@
 namespace App\Services;
 
 use App\Models\CapyEpisode;
-use App\Models\CapyEpisodeComment;
-use App\Models\CapyEpisodeCommentLike;
 use App\Models\CapySeason;
 use App\Models\CapySeries;
 use App\Models\CapyUserEpisode;
 use App\Models\CapyUserSeries;
 use App\Models\User;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class CapyShowTimeService
 {
-    public function __construct(protected TmdbService $tmdb)
-    {
-    }
+    public function __construct(protected TmdbService $tmdb) {}
 
     /**
      * Sincroniza e garante que a série e suas temporadas existam no banco local
@@ -32,7 +27,7 @@ class CapyShowTimeService
         }
 
         $data = $this->tmdb->getSeriesDetails($tmdbId);
-        if (!$data) {
+        if (! $data) {
             return $series; // retorna cache se api falhar
         }
 
@@ -44,7 +39,7 @@ class CapyShowTimeService
                 'overview' => $data['overview'] ?? null,
                 'poster_path' => $data['poster_path'] ?? null,
                 'backdrop_path' => $data['backdrop_path'] ?? null,
-                'first_air_date' => !empty($data['first_air_date']) ? $data['first_air_date'] : null,
+                'first_air_date' => ! empty($data['first_air_date']) ? $data['first_air_date'] : null,
                 'status' => $data['status'] ?? null,
                 'vote_average' => $data['vote_average'] ?? 0,
                 'number_of_seasons' => $data['number_of_seasons'] ?? 0,
@@ -55,7 +50,7 @@ class CapyShowTimeService
         );
 
         // Salvar temporadas
-        if (!empty($data['seasons'])) {
+        if (! empty($data['seasons'])) {
             foreach ($data['seasons'] as $sData) {
                 // temporada 0 geralmente são especiais/extras; podemos manter ou sincronizar
                 CapySeason::updateOrCreate(
@@ -68,7 +63,7 @@ class CapyShowTimeService
                         'name' => $sData['name'] ?? null,
                         'overview' => $sData['overview'] ?? null,
                         'poster_path' => $sData['poster_path'] ?? null,
-                        'air_date' => !empty($sData['air_date']) ? $sData['air_date'] : null,
+                        'air_date' => ! empty($sData['air_date']) ? $sData['air_date'] : null,
                         'episode_count' => $sData['episode_count'] ?? 0,
                     ]
                 );
@@ -93,11 +88,11 @@ class CapyShowTimeService
         }
 
         $data = $this->tmdb->getSeasonDetails($series->tmdb_id, $seasonNumber);
-        if (!$data) {
+        if (! $data) {
             return $season;
         }
 
-        if (!$season) {
+        if (! $season) {
             $season = CapySeason::create([
                 'series_id' => $series->id,
                 'season_number' => $seasonNumber,
@@ -105,12 +100,12 @@ class CapyShowTimeService
                 'name' => $data['name'] ?? "Temporada {$seasonNumber}",
                 'overview' => $data['overview'] ?? null,
                 'poster_path' => $data['poster_path'] ?? null,
-                'air_date' => !empty($data['air_date']) ? $data['air_date'] : null,
+                'air_date' => ! empty($data['air_date']) ? $data['air_date'] : null,
                 'episode_count' => count($data['episodes'] ?? []),
             ]);
         }
 
-        if (!empty($data['episodes'])) {
+        if (! empty($data['episodes'])) {
             foreach ($data['episodes'] as $epData) {
                 CapyEpisode::updateOrCreate(
                     [
@@ -124,7 +119,7 @@ class CapyShowTimeService
                         'name' => $epData['name'] ?? "Episódio {$epData['episode_number']}",
                         'overview' => $epData['overview'] ?? null,
                         'still_path' => $epData['still_path'] ?? null,
-                        'air_date' => !empty($epData['air_date']) ? $epData['air_date'] : null,
+                        'air_date' => ! empty($epData['air_date']) ? $epData['air_date'] : null,
                         'runtime' => $epData['runtime'] ?? null,
                     ]
                 );
@@ -187,7 +182,7 @@ class CapyShowTimeService
 
         $toInsert = [];
         foreach ($episodes as $ep) {
-            if (!$existingEpisodeIds->has($ep->id)) {
+            if (! $existingEpisodeIds->has($ep->id)) {
                 $toInsert[] = [
                     'user_id' => $user->id,
                     'series_id' => $series->id,
@@ -202,11 +197,208 @@ class CapyShowTimeService
             }
         }
 
-        if (!empty($toInsert)) {
+        if (! empty($toInsert)) {
             foreach (array_chunk($toInsert, 200) as $chunk) {
                 CapyUserEpisode::insert($chunk);
             }
         }
+    }
+
+    /**
+     * Marca todos os episódios de uma temporada específica como assistidos
+     */
+    public function markSeasonEpisodesWatched(User $user, CapySeries $series, int $seasonNumber): ?array
+    {
+        $season = $this->syncSeasonEpisodes($series, $seasonNumber);
+        if (! $season) {
+            return null;
+        }
+
+        $episodes = $season->episodes()->orderBy('episode_number')->get();
+        if ($episodes->isEmpty()) {
+            return [
+                'season_id' => $season->id,
+                'season_number' => $seasonNumber,
+                'watched_episode_ids' => [],
+                'user_status' => null,
+                'season_average' => null,
+                'series_average' => null,
+            ];
+        }
+
+        $now = now();
+        $episodeIds = $episodes->pluck('id');
+
+        // Atualiza os que já existem mas não estavam assistidos
+        CapyUserEpisode::where('user_id', $user->id)
+            ->whereIn('episode_id', $episodeIds)
+            ->where('is_watched', false)
+            ->update([
+                'is_watched' => true,
+                'watched_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+        $existingEpisodeIds = CapyUserEpisode::where('user_id', $user->id)
+            ->whereIn('episode_id', $episodeIds)
+            ->pluck('episode_id')
+            ->flip();
+
+        $toInsert = [];
+        foreach ($episodes as $ep) {
+            if (! $existingEpisodeIds->has($ep->id)) {
+                $toInsert[] = [
+                    'user_id' => $user->id,
+                    'series_id' => $series->id,
+                    'season_id' => $season->id,
+                    'episode_id' => $ep->id,
+                    'is_watched' => true,
+                    'watched_at' => $now,
+                    'rating' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+
+        if (! empty($toInsert)) {
+            foreach (array_chunk($toInsert, 200) as $chunk) {
+                CapyUserEpisode::insert($chunk);
+            }
+        }
+
+        // Atualiza status da série para watching ou completed
+        $userSeries = CapyUserSeries::firstOrNew([
+            'user_id' => $user->id,
+            'series_id' => $series->id,
+        ]);
+
+        $allRegularEpisodesCount = CapyEpisode::where('series_id', $series->id)
+            ->where('season_number', '>', 0)
+            ->count();
+        $allWatchedCount = CapyUserEpisode::where('user_id', $user->id)
+            ->where('series_id', $series->id)
+            ->where('is_watched', true)
+            ->whereHas('episode', fn ($q) => $q->where('season_number', '>', 0))
+            ->count();
+
+        if ($allRegularEpisodesCount > 0 && $allWatchedCount >= $allRegularEpisodesCount) {
+            $userSeries->status = 'completed';
+        } elseif (! $userSeries->status || $userSeries->status === 'plan_to_watch') {
+            $userSeries->status = 'watching';
+        }
+        $userSeries->save();
+
+        $ratings = $this->getUserSeriesRatings($user->id, $series->id);
+
+        return [
+            'season_id' => $season->id,
+            'season_number' => $seasonNumber,
+            'watched_episode_ids' => $episodeIds->all(),
+            'user_status' => $userSeries->status,
+            'season_average' => $ratings['seasons'][$seasonNumber]['average'] ?? null,
+            'series_average' => $ratings['series_average'],
+        ];
+    }
+
+    /**
+     * Marca o episódio selecionado e todos os anteriores (da temporada e temporadas anteriores) como assistidos
+     */
+    public function markPreviousEpisodesWatched(User $user, CapyEpisode $targetEpisode): array
+    {
+        $series = $targetEpisode->series;
+        if ($series) {
+            // Sincroniza todas as temporadas até a temporada do episódio alvo
+            for ($s = 1; $s <= $targetEpisode->season_number; $s++) {
+                $this->syncSeasonEpisodes($series, $s);
+            }
+        }
+
+        // Busca todos os episódios até o alvo
+        $episodes = CapyEpisode::where('series_id', $targetEpisode->series_id)
+            ->where('season_number', '>', 0)
+            ->where(function ($query) use ($targetEpisode) {
+                $query->where('season_number', '<', $targetEpisode->season_number)
+                    ->orWhere(function ($q) use ($targetEpisode) {
+                        $q->where('season_number', $targetEpisode->season_number)
+                            ->where('episode_number', '<=', $targetEpisode->episode_number);
+                    });
+            })
+            ->orderBy('season_number')
+            ->orderBy('episode_number')
+            ->get();
+
+        $now = now();
+        $episodeIds = $episodes->pluck('id');
+
+        CapyUserEpisode::where('user_id', $user->id)
+            ->whereIn('episode_id', $episodeIds)
+            ->where('is_watched', false)
+            ->update([
+                'is_watched' => true,
+                'watched_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+        $existingEpisodeIds = CapyUserEpisode::where('user_id', $user->id)
+            ->whereIn('episode_id', $episodeIds)
+            ->pluck('episode_id')
+            ->flip();
+
+        $toInsert = [];
+        foreach ($episodes as $ep) {
+            if (! $existingEpisodeIds->has($ep->id)) {
+                $toInsert[] = [
+                    'user_id' => $user->id,
+                    'series_id' => $ep->series_id,
+                    'season_id' => $ep->season_id,
+                    'episode_id' => $ep->id,
+                    'is_watched' => true,
+                    'watched_at' => $now,
+                    'rating' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+
+        if (! empty($toInsert)) {
+            foreach (array_chunk($toInsert, 200) as $chunk) {
+                CapyUserEpisode::insert($chunk);
+            }
+        }
+
+        // Atualiza status da série
+        $userSeries = CapyUserSeries::firstOrNew([
+            'user_id' => $user->id,
+            'series_id' => $targetEpisode->series_id,
+        ]);
+
+        $allRegularEpisodesCount = CapyEpisode::where('series_id', $targetEpisode->series_id)
+            ->where('season_number', '>', 0)
+            ->count();
+        $allWatchedCount = CapyUserEpisode::where('user_id', $user->id)
+            ->where('series_id', $targetEpisode->series_id)
+            ->where('is_watched', true)
+            ->whereHas('episode', fn ($q) => $q->where('season_number', '>', 0))
+            ->count();
+
+        if ($allRegularEpisodesCount > 0 && $allWatchedCount >= $allRegularEpisodesCount) {
+            $userSeries->status = 'completed';
+        } elseif (! $userSeries->status || $userSeries->status === 'plan_to_watch') {
+            $userSeries->status = 'watching';
+        }
+        $userSeries->save();
+
+        $ratings = $this->getUserSeriesRatings($user->id, $targetEpisode->series_id);
+
+        return [
+            'target_episode_id' => $targetEpisode->id,
+            'watched_episode_ids' => $episodeIds->all(),
+            'user_status' => $userSeries->status,
+            'season_average' => $ratings['seasons'][$targetEpisode->season_number]['average'] ?? null,
+            'series_average' => $ratings['series_average'],
+        ];
     }
 
     /**
@@ -232,10 +424,10 @@ class CapyShowTimeService
         $progress->series_id = $episode->series_id;
         $progress->season_id = $episode->season_id;
         $progress->is_watched = $isWatched ?? true;
-        
-        if ($progress->is_watched && !$progress->watched_at) {
+
+        if ($progress->is_watched && ! $progress->watched_at) {
             $progress->watched_at = now();
-        } elseif (!$progress->is_watched) {
+        } elseif (! $progress->is_watched) {
             $progress->watched_at = null;
         }
 
@@ -244,7 +436,7 @@ class CapyShowTimeService
             $rating = max(1.0, min(10.0, round($rating, 1)));
             $progress->rating = $rating;
             $progress->is_watched = true;
-            if (!$progress->watched_at) {
+            if (! $progress->watched_at) {
                 $progress->watched_at = now();
             }
         }
