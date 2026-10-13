@@ -24,6 +24,18 @@ class FeedPostsSeeder extends Seeder
             return;
         }
 
+        // Limpar posts antigos deste seeder para permitir re-execução limpa
+        Post::whereIn('external_id', [
+            'letterboxd-seed-interstellar',
+            'letterboxd-seed-dune2',
+            'capyshowtime:ep:seed:breakingbad',
+            'capyshowtime:comment:seed:thelastofus',
+            'xbox:seed:halo',
+            'manual:seed:witcher3',
+            'xbox-seed-halo-infinite',
+            'game-review-seed-elden-ring',
+        ])->delete();
+
         // Hashtags
         $tagCapivara = Hashtag::firstOrCreate(['name' => 'capivara']);
         $tagCinema = Hashtag::firstOrCreate(['name' => 'cinema']);
@@ -125,7 +137,7 @@ class FeedPostsSeeder extends Seeder
             'external_source' => 'capyshowtime',
             'external_id' => 'capyshowtime:ep:seed:breakingbad',
             'watched_at' => now()->subHours(3),
-            'content' => 'Assistiu e avaliou o episódio S05E14 (Ozymandias) de Breaking Bad com nota 5 ★.',
+            'content' => 'Provavelmente o melhor episódio de televisão de todos os tempos. Atuações viscerais e direção impecável.',
             'metadata' => [
                 'type' => 'rating',
                 'series_id' => 1,
@@ -136,6 +148,7 @@ class FeedPostsSeeder extends Seeder
                 'episode_name' => 'Ozymandias',
                 'poster_url' => 'https://image.tmdb.org/t/p/w500/ggFHVNu6YYI5L9pCfOacjizRGt.jpg',
                 'rating' => 5.0,
+                'watched_date' => now()->subHours(3)->format('Y-m-d'),
             ],
             'created_at' => now()->subHours(3),
             'updated_at' => now()->subHours(3),
@@ -160,6 +173,8 @@ class FeedPostsSeeder extends Seeder
                 'episode_number' => 3,
                 'episode_name' => 'Long, Long Time',
                 'poster_url' => 'https://image.tmdb.org/t/p/w500/uKvVjHNqB5VmOrdxqAt2V7JMrRI.jpg',
+                'rating' => 5.0,
+                'watched_date' => now()->subHours(2)->format('Y-m-d'),
                 'is_spoiler' => false,
             ],
             'created_at' => now()->subHours(2),
