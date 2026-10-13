@@ -373,4 +373,136 @@ class CapyShowTimeTest extends TestCase
             }
         }
     }
+
+    public function test_marking_episode_watched_without_rating_does_not_create_feed_post(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 88881,
+            'name' => 'No Rating Series',
+            'number_of_seasons' => 1,
+            'synced_at' => now(),
+        ]);
+
+        $season = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+            'name' => 'Temporada 1',
+        ]);
+
+        $ep = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'name' => 'Episódio Apenas Assistido',
+        ]);
+
+        // Marca como assistido sem nota via endpoint
+        $res = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/episodes/rate', [
+            'episode_id' => $ep->id,
+            'is_watched' => true,
+            'rating' => null,
+        ]);
+
+        $res->assertStatus(200);
+
+        // Não deve ter criado nenhum Post no feed
+        $this->assertDatabaseMissing('posts', [
+            'external_source' => 'capyshowtime',
+            'external_id' => "capyshowtime:ep:{$ep->id}:user:{$this->user->id}",
+        ]);
+    }
+
+    public function test_marking_episode_watched_with_rating_creates_feed_post_and_removing_rating_deletes_it(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 88882,
+            'name' => 'Rating Series',
+            'number_of_seasons' => 1,
+            'synced_at' => now(),
+        ]);
+
+        $season = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+            'name' => 'Temporada 1',
+        ]);
+
+        $ep = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'name' => 'Episódio Avaliado',
+        ]);
+
+        // 1. Marca com nota 8.5
+        $res = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/episodes/rate', [
+            'episode_id' => $ep->id,
+            'is_watched' => true,
+            'rating' => 8.5,
+        ]);
+
+        $res->assertStatus(200);
+
+        // Deve existir post no feed
+        $this->assertDatabaseHas('posts', [
+            'external_source' => 'capyshowtime',
+            'external_id' => "capyshowtime:ep:{$ep->id}:user:{$this->user->id}",
+            'entertainment_type' => 'series',
+        ]);
+
+        // 2. Remove a nota
+        $resRemove = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/episodes/rate', [
+            'episode_id' => $ep->id,
+            'is_watched' => true,
+            'remove_rating' => true,
+        ]);
+
+        $resRemove->assertStatus(200);
+
+        // O post deve ter sido excluído do feed
+        $this->assertDatabaseMissing('posts', [
+            'external_source' => 'capyshowtime',
+            'external_id' => "capyshowtime:ep:{$ep->id}:user:{$this->user->id}",
+        ]);
+    }
+
+    public function test_completing_series_creates_completed_feed_post_and_removing_status_deletes_it(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 88883,
+            'name' => 'Completed Series Test',
+            'number_of_seasons' => 1,
+            'synced_at' => now(),
+        ]);
+
+        // 1. Define status como completed
+        $res = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/series/status', [
+            'tmdb_id' => $series->tmdb_id,
+            'status' => 'completed',
+        ]);
+
+        $res->assertStatus(200);
+
+        $this->assertDatabaseHas('posts', [
+            'external_source' => 'capyshowtime',
+            'external_id' => "capyshowtime:series_completed:{$series->id}:user:{$this->user->id}",
+            'entertainment_type' => 'series',
+        ]);
+
+        // 2. Muda status para watching
+        $resWatching = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/series/status', [
+            'tmdb_id' => $series->tmdb_id,
+            'status' => 'watching',
+        ]);
+
+        $resWatching->assertStatus(200);
+
+        // O post de conclusão deve ter sido excluído
+        $this->assertDatabaseMissing('posts', [
+            'external_source' => 'capyshowtime',
+            'external_id' => "capyshowtime:series_completed:{$series->id}:user:{$this->user->id}",
+        ]);
+    }
 }

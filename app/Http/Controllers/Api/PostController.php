@@ -81,7 +81,18 @@ class PostController extends Controller
             $category = $request->input('category');
             $entertainmentType = $request->input('entertainment_type');
 
-            if ($tab === 'media' || $tab === 'midias' || $tab === 'mídias') {
+            if ($tab === 'text' || $tab === 'texto' || $tab === 'textos' || $tab === 'capit' || $tab === 'capits') {
+                // Apenas posts de texto / Capits (sem fotos/vídeos e sem cards de entretenimento externos)
+                $query->whereNotNull('content')
+                    ->where('content', '!=', '')
+                    ->doesntHave('media')
+                    ->where(function ($q) {
+                        $q->whereNull('category')
+                            ->orWhere('category', '!=', 'entertainment');
+                    })
+                    ->whereNull('entertainment_type')
+                    ->whereNull('external_source');
+            } elseif ($tab === 'media' || $tab === 'midias' || $tab === 'mídias') {
                 // Apenas posts onde os usuários anexaram imagens/vídeos
                 $query->has('media');
             } elseif ($tab === 'movies' || $tab === 'filmes' || ($category === 'entertainment' && $entertainmentType === 'movie')) {
@@ -107,6 +118,35 @@ class PostController extends Controller
                 });
             }
             // Por padrão (tab === 'all' ou omitido): todos os tipos de postagem mesclados no feed!
+
+            // Para publicações de séries (CapyShowTime), exibir apenas atualizações relevantes:
+            // comentários em episódios, avaliações com nota (> 0), e séries completadas.
+            // Episódios apenas marcados como assistidos sem nota/comentário não devem poluir o feed.
+            $query->where(function ($q) {
+                $q->where(function ($notSeries) {
+                    $notSeries->where(function ($sourceQ) {
+                        $sourceQ->where('external_source', '!=', 'capyshowtime')
+                            ->orWhereNull('external_source');
+                    })
+                        ->where(function ($typeQ) {
+                            $typeQ->where('entertainment_type', '!=', 'series')
+                                ->orWhereNull('entertainment_type');
+                        });
+                })->orWhere(function ($isSeries) {
+                    $isSeries->where(function ($sQ) {
+                        $sQ->where('external_source', 'capyshowtime')
+                            ->orWhere('entertainment_type', 'series');
+                    })
+                        ->where(function ($relevant) {
+                            $relevant->where('metadata->type', 'completed')
+                                ->orWhere('metadata->type', 'comment')
+                                ->orWhere(function ($rateQ) {
+                                    $rateQ->whereNotNull('metadata->rating')
+                                        ->where('metadata->rating', '>', 0);
+                                });
+                        });
+                });
+            });
         }
 
         if ($request->filled('q') || $request->filled('search')) {

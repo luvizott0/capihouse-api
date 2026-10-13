@@ -225,6 +225,7 @@ class CapyShowTimeController extends Controller
 
         if ($validated['status'] === 'remove') {
             $this->service->removeSeriesStatus($user, $series);
+            $this->removeSeriesCompletedPost($user, $series);
 
             return response()->json(['message' => 'Série removida da lista', 'status' => null]);
         }
@@ -233,34 +234,9 @@ class CapyShowTimeController extends Controller
 
         // Se marcou como concluída, sincroniza no Feed de Entretenimento da Capihouse
         if ($validated['status'] === 'completed') {
-            try {
-                $post = Post::updateOrCreate(
-                    [
-                        'user_id' => $user->id,
-                        'external_source' => 'capyshowtime',
-                        'external_id' => "capyshowtime:series_completed:{$series->id}:user:{$user->id}",
-                    ],
-                    [
-                        'category' => 'entertainment',
-                        'entertainment_type' => 'series',
-                        'watched_at' => now(),
-                        'content' => "Concluiu a série {$series->name}! 🏆",
-                        'metadata' => [
-                            'type' => 'completed',
-                            'series_id' => $series->id,
-                            'tmdb_id' => $series->tmdb_id,
-                            'series_name' => $series->name,
-                            'poster_url' => $series->poster_url,
-                            'number_of_seasons' => $series->number_of_seasons,
-                        ],
-                    ]
-                );
-
-                $post->load('user:id,name,username,avatar_url');
-                broadcast(new PostCreated($post));
-            } catch (\Throwable $e) {
-                Log::warning('Erro ao criar post de conclusão de série no CapyShowTime: '.$e->getMessage());
-            }
+            $this->syncSeriesCompletedPost($user, $series);
+        } else {
+            $this->removeSeriesCompletedPost($user, $series);
         }
 
         return response()->json([
@@ -304,8 +280,8 @@ class CapyShowTimeController extends Controller
         // Recalcular médias da temporada e série para o usuário
         $ratings = $this->service->getUserSeriesRatings($user->id, $episode->series_id);
 
-        // Alimentar o Feed de Entretenimento da Capihouse apenas para avaliações com nota
-        if ($isWatched && $rating !== null) {
+        // Alimentar o Feed de Entretenimento da Capihouse apenas para avaliações com nota válida (> 0)
+        if ($isWatched && $rating !== null && $rating > 0 && empty($validated['remove_rating'])) {
             try {
                 $series = $episode->series;
                 if ($series) {
@@ -343,11 +319,25 @@ class CapyShowTimeController extends Controller
             } catch (\Throwable $e) {
                 Log::warning('Erro ao sincronizar avaliação com Capihouse: '.$e->getMessage());
             }
-        } elseif (! empty($validated['remove_rating']) || $rating === null) {
-            // Se a nota foi removida ou o episódio apenas marcado como visto sem nota, remove eventual post para manter o feed limpo
+        } else {
+            // Se a nota foi removida, ou o episódio apenas marcado como visto sem nota, remove eventual post para manter o feed limpo
             Post::where('external_source', 'capyshowtime')
                 ->where('external_id', "capyshowtime:ep:{$episode->id}:user:{$user->id}")
                 ->delete();
+        }
+
+        // Sincroniza se a série completou todas as temporadas com esse episódio
+        $series = $episode->series;
+        if ($series) {
+            $userSeries = CapyUserSeries::where('user_id', $user->id)
+                ->where('series_id', $series->id)
+                ->first();
+
+            if ($userSeries?->status === 'completed') {
+                $this->syncSeriesCompletedPost($user, $series);
+            } else {
+                $this->removeSeriesCompletedPost($user, $series);
+            }
         }
 
         return response()->json([
@@ -380,6 +370,10 @@ class CapyShowTimeController extends Controller
             return response()->json(['message' => 'Temporada não encontrada'], 404);
         }
 
+        if (($result['user_status'] ?? null) === 'completed') {
+            $this->syncSeriesCompletedPost($user, $series);
+        }
+
         return response()->json(array_merge([
             'message' => 'Temporada marcada como assistida',
         ], $result));
@@ -398,6 +392,10 @@ class CapyShowTimeController extends Controller
         $episode = CapyEpisode::with('series')->findOrFail($validated['episode_id']);
 
         $result = $this->service->markPreviousEpisodesWatched($user, $episode);
+
+        if (($result['user_status'] ?? null) === 'completed' && $episode->series) {
+            $this->syncSeriesCompletedPost($user, $episode->series);
+        }
 
         return response()->json(array_merge([
             'message' => 'Episódios anteriores marcados como assistidos',
@@ -756,5 +754,50 @@ class CapyShowTimeController extends Controller
             ->get();
 
         return response()->json($users);
+    }
+
+    /**
+     * Sincroniza post de série completada no feed da Capihouse
+     */
+    private function syncSeriesCompletedPost(User $user, CapySeries $series): void
+    {
+        try {
+            $post = Post::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'external_source' => 'capyshowtime',
+                    'external_id' => "capyshowtime:series_completed:{$series->id}:user:{$user->id}",
+                ],
+                [
+                    'category' => 'entertainment',
+                    'entertainment_type' => 'series',
+                    'watched_at' => now(),
+                    'content' => "Concluiu a série {$series->name}! 🏆",
+                    'metadata' => [
+                        'type' => 'completed',
+                        'series_id' => $series->id,
+                        'tmdb_id' => $series->tmdb_id,
+                        'series_name' => $series->name,
+                        'poster_url' => $series->poster_url,
+                        'number_of_seasons' => $series->number_of_seasons,
+                    ],
+                ]
+            );
+
+            $post->load('user:id,name,username,avatar_url');
+            broadcast(new PostCreated($post));
+        } catch (\Throwable $e) {
+            Log::warning('Erro ao criar post de conclusão de série no CapyShowTime: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Remove eventual post de série completada quando o status deixa de ser completed
+     */
+    private function removeSeriesCompletedPost(User $user, CapySeries $series): void
+    {
+        Post::where('external_source', 'capyshowtime')
+            ->where('external_id', "capyshowtime:series_completed:{$series->id}:user:{$user->id}")
+            ->delete();
     }
 }

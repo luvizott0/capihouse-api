@@ -5,7 +5,6 @@ namespace Database\Seeders;
 use App\Enums\MediaType;
 use App\Models\Feeling;
 use App\Models\Hashtag;
-use App\Models\Media;
 use App\Models\Post;
 use App\Models\PostComment;
 use App\Models\PostLike;

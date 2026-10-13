@@ -450,9 +450,23 @@ class CapyShowTimeService
             ['status' => 'watching']
         );
 
-        if ($userSeries->status === 'plan_to_watch') {
-            $userSeries->update(['status' => 'watching']);
+        $allRegularEpisodesCount = CapyEpisode::where('series_id', $episode->series_id)
+            ->where('season_number', '>', 0)
+            ->count();
+        $allWatchedCount = CapyUserEpisode::where('user_id', $user->id)
+            ->where('series_id', $episode->series_id)
+            ->where('is_watched', true)
+            ->whereHas('episode', fn ($q) => $q->where('season_number', '>', 0))
+            ->count();
+
+        if ($allRegularEpisodesCount > 0 && $allWatchedCount >= $allRegularEpisodesCount) {
+            $userSeries->status = 'completed';
+        } elseif ($userSeries->status === 'completed' && $allWatchedCount < $allRegularEpisodesCount) {
+            $userSeries->status = 'watching';
+        } elseif (! $userSeries->status || $userSeries->status === 'plan_to_watch') {
+            $userSeries->status = 'watching';
         }
+        $userSeries->save();
 
         return $progress;
     }
