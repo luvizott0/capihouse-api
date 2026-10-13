@@ -63,19 +63,9 @@ class PostController extends Controller
             }
             $query->where('group_id', $groupId);
             $query->whereNull('event_id');
-        } elseif ($request->input('category') === 'entertainment') {
-            // Aba de entretenimento: apenas posts da categoria entertainment (sempre públicos, fora de grupos/eventos)
-            $query->whereNull('event_id')->whereNull('group_id');
-            $query->where('category', 'entertainment');
-            if ($request->filled('entertainment_type')) {
-                $query->where('entertainment_type', $request->input('entertainment_type'));
-            }
         } else {
-            // Feed geral: posts normais/reposts (categoria feed ou null) + posts de grupos que o usuário participa
+            // Feed geral (mesclado) ou abas de filtro: Todas, Mídias, Filmes, Séries, Jogos
             $query->whereNull('event_id');
-            $query->where(function ($q) {
-                $q->whereNull('category')->orWhere('category', 'feed');
-            });
             $query->where(function ($q) use ($userId, $isAdmin) {
                 $q->whereNull('group_id');
                 if ($isAdmin) {
@@ -86,6 +76,37 @@ class PostController extends Controller
                     });
                 }
             });
+
+            $tab = $request->input('tab', $request->input('feed_type'));
+            $category = $request->input('category');
+            $entertainmentType = $request->input('entertainment_type');
+
+            if ($tab === 'media' || $tab === 'midias' || $tab === 'mídias') {
+                // Apenas posts onde os usuários anexaram imagens/vídeos
+                $query->has('media');
+            } elseif ($tab === 'movies' || $tab === 'filmes' || ($category === 'entertainment' && $entertainmentType === 'movie')) {
+                // Posts de filmes
+                $query->where('category', 'entertainment')
+                    ->where('entertainment_type', 'movie');
+            } elseif ($tab === 'series' || $tab === 'séries' || ($category === 'entertainment' && $entertainmentType === 'series')) {
+                // Posts de séries
+                $query->where('category', 'entertainment')
+                    ->where('entertainment_type', 'series');
+            } elseif ($tab === 'games' || $tab === 'jogos' || ($category === 'entertainment' && $entertainmentType === 'game')) {
+                // Posts de jogos
+                $query->where('category', 'entertainment')
+                    ->where('entertainment_type', 'game');
+            } elseif ($category === 'entertainment') {
+                $query->where('category', 'entertainment');
+                if ($entertainmentType) {
+                    $query->where('entertainment_type', $entertainmentType);
+                }
+            } elseif ($category === 'feed') {
+                $query->where(function ($q) {
+                    $q->whereNull('category')->orWhere('category', 'feed');
+                });
+            }
+            // Por padrão (tab === 'all' ou omitido): todos os tipos de postagem mesclados no feed!
         }
 
         if ($request->filled('q') || $request->filled('search')) {
@@ -151,11 +172,7 @@ class PostController extends Controller
             });
         }
 
-        if ($request->input('category') === 'entertainment') {
-            $posts = $query->orderByRaw('COALESCE(watched_at, created_at) DESC')->orderByDesc('id')->paginate(15);
-        } else {
-            $posts = $query->latest()->paginate(15);
-        }
+        $posts = $query->orderByRaw('COALESCE(watched_at, created_at) DESC')->orderByDesc('id')->paginate(15);
 
         // Transform collection to append is_liked by current user
         $posts->getCollection()->transform(function ($post) use ($userId) {

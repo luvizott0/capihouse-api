@@ -144,7 +144,7 @@ XML;
         $this->assertEquals(1, Post::where('external_id', 'letterboxd-watch-999999')->count());
     }
 
-    public function test_entertainment_posts_are_filtered_from_general_feed()
+    public function test_entertainment_and_regular_posts_are_merged_in_feed_and_can_be_filtered()
     {
         $user = $this->createApprovedUser();
 
@@ -170,12 +170,19 @@ XML;
             ],
         ]);
 
-        // Feed geral (sem parâmetros)
+        // Feed geral (mesclado por padrão)
         $generalFeed = $this->actingAs($user)->getJson('/api/posts');
         $generalFeed->assertStatus(200);
         $generalFeedIds = collect($generalFeed->json('data'))->pluck('id');
         $this->assertTrue($generalFeedIds->contains($feedPost->id));
-        $this->assertFalse($generalFeedIds->contains($entertainmentPost->id));
+        $this->assertTrue($generalFeedIds->contains($entertainmentPost->id));
+
+        // Filtro de filmes (tab=movies)
+        $moviesFeed = $this->actingAs($user)->getJson('/api/posts?tab=movies');
+        $moviesFeed->assertStatus(200);
+        $moviesFeedIds = collect($moviesFeed->json('data'))->pluck('id');
+        $this->assertFalse($moviesFeedIds->contains($feedPost->id));
+        $this->assertTrue($moviesFeedIds->contains($entertainmentPost->id));
 
         // Feed de entretenimento (category=entertainment)
         $entertainmentFeed = $this->actingAs($user)->getJson('/api/posts?category=entertainment');

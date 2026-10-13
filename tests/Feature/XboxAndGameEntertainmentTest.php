@@ -297,11 +297,13 @@ class XboxAndGameEntertainmentTest extends TestCase
         $this->assertCount(1, $entRes->json('data'));
         $this->assertEquals('LEGO Marvel Super Heroes', $entRes->json('data.0.metadata.game_title'));
 
-        // 2. Busca no feed principal (deve encontrar o repost pelo título do jogo repostado)
+        // 2. Busca no feed principal (deve encontrar tanto o post original do jogo quanto o repost no feed unificado)
         $feedRes = $this->actingAs($user)->getJson('/api/posts?q=lego');
         $feedRes->assertStatus(200);
-        $this->assertCount(1, $feedRes->json('data'));
-        $this->assertEquals($repost->id, $feedRes->json('data.0.id'));
+        $this->assertCount(2, $feedRes->json('data'));
+        $feedIds = collect($feedRes->json('data'))->pluck('id');
+        $this->assertTrue($feedIds->contains($gamePost->id));
+        $this->assertTrue($feedIds->contains($repost->id));
     }
 
     public function test_user_can_search_games_via_api(): void
