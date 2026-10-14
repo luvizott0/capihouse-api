@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Auth\ImpersonateController;
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\LogoutController;
 use App\Http\Controllers\Api\Auth\RegisterController;
+use App\Http\Controllers\Api\CapsuleController;
 use App\Http\Controllers\Api\CapyShowTimeController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\GameReviewController;
@@ -170,6 +171,19 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/community-activity', [CapyShowTimeController::class, 'communityActivity']);
             Route::get('/users', [CapyShowTimeController::class, 'users']);
             Route::get('/users/{userId}', [CapyShowTimeController::class, 'userProfile']);
+        });
+
+        // CapyCaps (Time Capsule & Memories Journal)
+        Route::prefix('capsule')->group(function () {
+            Route::get('/timeline', [CapsuleController::class, 'timelineStats']);
+            Route::get('/on-this-day', [CapsuleController::class, 'onThisDay']);
+            Route::get('/tags', [CapsuleController::class, 'tags']);
+            Route::get('/memories', [CapsuleController::class, 'index']);
+            Route::post('/memories', [CapsuleController::class, 'store']);
+            Route::get('/memories/{id}', [CapsuleController::class, 'show']);
+            Route::match(['put', 'patch', 'post'], '/memories/{id}', [CapsuleController::class, 'update']);
+            Route::delete('/memories/{id}', [CapsuleController::class, 'destroy']);
+            Route::post('/memories/{id}/toggle-favorite', [CapsuleController::class, 'toggleFavorite']);
         });
 
         // Admin

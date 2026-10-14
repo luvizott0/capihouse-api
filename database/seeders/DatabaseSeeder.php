@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             UsersSeeder::class,
             FeelingSeeder::class,
             FeedPostsSeeder::class,
+            CapsuleMemoriesSeeder::class,
         ]);
     }
 }
