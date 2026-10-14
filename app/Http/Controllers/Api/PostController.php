@@ -139,6 +139,7 @@ class PostController extends Controller
                     })
                         ->where(function ($relevant) {
                             $relevant->where('metadata->type', 'completed')
+                                ->orWhere('metadata->type', 'dropped')
                                 ->orWhere('metadata->type', 'comment')
                                 ->orWhere(function ($rateQ) {
                                     $rateQ->whereNotNull('metadata->rating')

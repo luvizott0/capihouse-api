@@ -505,4 +505,124 @@ class CapyShowTimeTest extends TestCase
             'external_id' => "capyshowtime:series_completed:{$series->id}:user:{$this->user->id}",
         ]);
     }
+
+    public function test_marking_one_season_of_multi_season_series_keeps_watching_status(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 88884,
+            'name' => 'Multi-Season Series Test',
+            'number_of_seasons' => 3,
+            'number_of_episodes' => 30,
+            'synced_at' => now(),
+        ]);
+
+        $season1 = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+            'episode_count' => 10,
+            'name' => 'Temporada 1',
+        ]);
+
+        CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 2,
+            'episode_count' => 10,
+            'name' => 'Temporada 2',
+        ]);
+
+        CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 3,
+            'episode_count' => 10,
+            'name' => 'Temporada 3',
+        ]);
+
+        for ($i = 1; $i <= 10; $i++) {
+            CapyEpisode::create([
+                'series_id' => $series->id,
+                'season_id' => $season1->id,
+                'season_number' => 1,
+                'episode_number' => $i,
+                'name' => "Episódio {$i}",
+            ]);
+        }
+
+        $res = $this->actingAs($this->user, 'sanctum')->postJson("/api/capyshowtime/series/{$series->tmdb_id}/season/1/watch-all");
+        $res->assertStatus(200);
+        $res->assertJson([
+            'user_status' => 'watching',
+        ]);
+
+        $this->assertDatabaseHas('capy_user_series', [
+            'user_id' => $this->user->id,
+            'series_id' => $series->id,
+            'status' => 'watching',
+        ]);
+
+        // NÃO deve criar post de conclusão
+        $this->assertDatabaseMissing('posts', [
+            'external_source' => 'capyshowtime',
+            'external_id' => "capyshowtime:series_completed:{$series->id}:user:{$this->user->id}",
+        ]);
+    }
+
+    public function test_dropping_series_creates_dropped_feed_post_and_changes_status(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 88885,
+            'name' => 'Dropped Series Test',
+            'number_of_seasons' => 2,
+            'synced_at' => now(),
+        ]);
+
+        $res = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/series/status', [
+            'tmdb_id' => $series->tmdb_id,
+            'status' => 'dropped',
+        ]);
+
+        $res->assertStatus(200);
+
+        $this->assertDatabaseHas('posts', [
+            'external_source' => 'capyshowtime',
+            'external_id' => "capyshowtime:series_dropped:{$series->id}:user:{$this->user->id}",
+            'entertainment_type' => 'series',
+        ]);
+    }
+
+    public function test_episode_comment_creates_clean_post_content(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 88886,
+            'name' => 'Clean Comment Test',
+            'number_of_seasons' => 1,
+            'synced_at' => now(),
+        ]);
+
+        $season = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+            'name' => 'Temporada 1',
+        ]);
+
+        $episode = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'name' => 'Pilot',
+        ]);
+
+        $res = $this->actingAs($this->user, 'sanctum')->postJson('/api/capyshowtime/episodes/comments', [
+            'episode_id' => $episode->id,
+            'content' => 'Esse episódio foi sensacional!',
+            'is_spoiler' => false,
+        ]);
+
+        $res->assertStatus(201);
+
+        $this->assertDatabaseHas('posts', [
+            'external_source' => 'capyshowtime',
+            'content' => 'Esse episódio foi sensacional!',
+        ]);
+    }
 }

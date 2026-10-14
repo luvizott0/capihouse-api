@@ -206,6 +206,64 @@ class CapyShowTimeService
     }
 
     /**
+     * Verifica se o usuário assistiu de fato a todos os episódios/temporadas da série
+     */
+    public function isSeriesFullyWatched(int $userId, CapySeries $series): bool
+    {
+        // 1. Temporadas regulares (season_number > 0)
+        $seasons = CapySeason::where('series_id', $series->id)
+            ->where('season_number', '>', 0)
+            ->get();
+
+        $totalExpected = 0;
+        if ($seasons->isNotEmpty()) {
+            $totalExpected = (int) $seasons->sum('episode_count');
+        }
+
+        if ($totalExpected <= 0 && $series->number_of_episodes > 0) {
+            $totalExpected = (int) $series->number_of_episodes;
+        }
+
+        if ($totalExpected <= 0) {
+            $totalExpected = CapyEpisode::where('series_id', $series->id)
+                ->where('season_number', '>', 0)
+                ->count();
+        }
+
+        if ($totalExpected <= 0) {
+            return false;
+        }
+
+        // 2. Contagem de episódios regulares assistidos
+        $watchedCount = CapyUserEpisode::where('user_id', $userId)
+            ->where('series_id', $series->id)
+            ->where('is_watched', true)
+            ->whereHas('episode', fn ($q) => $q->where('season_number', '>', 0))
+            ->count();
+
+        if ($watchedCount < $totalExpected) {
+            return false;
+        }
+
+        // 3. Se a série tem mais de uma temporada, certificar que todas as temporadas têm episódios assistidos
+        if ($seasons->count() > 1) {
+            $watchedSeasonIds = CapyUserEpisode::where('user_id', $userId)
+                ->where('series_id', $series->id)
+                ->where('is_watched', true)
+                ->whereNotNull('season_id')
+                ->whereHas('season', fn ($q) => $q->where('season_number', '>', 0))
+                ->distinct()
+                ->pluck('season_id');
+
+            if ($watchedSeasonIds->count() < $seasons->count()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Marca todos os episódios de uma temporada específica como assistidos
      */
     public function markSeasonEpisodesWatched(User $user, CapySeries $series, int $seasonNumber): ?array
@@ -274,18 +332,9 @@ class CapyShowTimeService
             'series_id' => $series->id,
         ]);
 
-        $allRegularEpisodesCount = CapyEpisode::where('series_id', $series->id)
-            ->where('season_number', '>', 0)
-            ->count();
-        $allWatchedCount = CapyUserEpisode::where('user_id', $user->id)
-            ->where('series_id', $series->id)
-            ->where('is_watched', true)
-            ->whereHas('episode', fn ($q) => $q->where('season_number', '>', 0))
-            ->count();
-
-        if ($allRegularEpisodesCount > 0 && $allWatchedCount >= $allRegularEpisodesCount) {
+        if ($this->isSeriesFullyWatched($user->id, $series)) {
             $userSeries->status = 'completed';
-        } elseif (! $userSeries->status || $userSeries->status === 'plan_to_watch') {
+        } else {
             $userSeries->status = 'watching';
         }
         $userSeries->save();
@@ -375,18 +424,10 @@ class CapyShowTimeService
             'series_id' => $targetEpisode->series_id,
         ]);
 
-        $allRegularEpisodesCount = CapyEpisode::where('series_id', $targetEpisode->series_id)
-            ->where('season_number', '>', 0)
-            ->count();
-        $allWatchedCount = CapyUserEpisode::where('user_id', $user->id)
-            ->where('series_id', $targetEpisode->series_id)
-            ->where('is_watched', true)
-            ->whereHas('episode', fn ($q) => $q->where('season_number', '>', 0))
-            ->count();
-
-        if ($allRegularEpisodesCount > 0 && $allWatchedCount >= $allRegularEpisodesCount) {
+        $series = $targetEpisode->series;
+        if ($series && $this->isSeriesFullyWatched($user->id, $series)) {
             $userSeries->status = 'completed';
-        } elseif (! $userSeries->status || $userSeries->status === 'plan_to_watch') {
+        } else {
             $userSeries->status = 'watching';
         }
         $userSeries->save();
@@ -450,18 +491,10 @@ class CapyShowTimeService
             ['status' => 'watching']
         );
 
-        $allRegularEpisodesCount = CapyEpisode::where('series_id', $episode->series_id)
-            ->where('season_number', '>', 0)
-            ->count();
-        $allWatchedCount = CapyUserEpisode::where('user_id', $user->id)
-            ->where('series_id', $episode->series_id)
-            ->where('is_watched', true)
-            ->whereHas('episode', fn ($q) => $q->where('season_number', '>', 0))
-            ->count();
-
-        if ($allRegularEpisodesCount > 0 && $allWatchedCount >= $allRegularEpisodesCount) {
+        $series = $episode->series;
+        if ($series && $this->isSeriesFullyWatched($user->id, $series)) {
             $userSeries->status = 'completed';
-        } elseif ($userSeries->status === 'completed' && $allWatchedCount < $allRegularEpisodesCount) {
+        } elseif ($userSeries->status === 'completed') {
             $userSeries->status = 'watching';
         } elseif (! $userSeries->status || $userSeries->status === 'plan_to_watch') {
             $userSeries->status = 'watching';

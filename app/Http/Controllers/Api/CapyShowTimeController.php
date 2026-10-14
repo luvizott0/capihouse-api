@@ -226,17 +226,23 @@ class CapyShowTimeController extends Controller
         if ($validated['status'] === 'remove') {
             $this->service->removeSeriesStatus($user, $series);
             $this->removeSeriesCompletedPost($user, $series);
+            $this->removeSeriesDroppedPost($user, $series);
 
             return response()->json(['message' => 'Série removida da lista', 'status' => null]);
         }
 
         $userSeries = $this->service->setSeriesStatus($user, $series, $validated['status']);
 
-        // Se marcou como concluída, sincroniza no Feed de Entretenimento da Capihouse
+        // Se marcou como concluída ou abandonada, sincroniza no Feed de Entretenimento da Capihouse
         if ($validated['status'] === 'completed') {
             $this->syncSeriesCompletedPost($user, $series);
+            $this->removeSeriesDroppedPost($user, $series);
+        } elseif ($validated['status'] === 'dropped') {
+            $this->syncSeriesDroppedPost($user, $series);
+            $this->removeSeriesCompletedPost($user, $series);
         } else {
             $this->removeSeriesCompletedPost($user, $series);
+            $this->removeSeriesDroppedPost($user, $series);
         }
 
         return response()->json([
@@ -286,7 +292,7 @@ class CapyShowTimeController extends Controller
                 $series = $episode->series;
                 if ($series) {
                     $epCode = sprintf('S%02dE%02d', $episode->season_number, $episode->episode_number);
-                    $content = "Assistiu e avaliou o episódio {$epCode} ({$episode->name}) de {$series->name} com nota {$rating} ★.";
+                    $content = "Assistiu e avaliou o episódio {$epCode} ({$episode->name}) de {$series->name} com nota {$rating}/10.";
 
                     $post = Post::updateOrCreate(
                         [
@@ -372,6 +378,8 @@ class CapyShowTimeController extends Controller
 
         if (($result['user_status'] ?? null) === 'completed') {
             $this->syncSeriesCompletedPost($user, $series);
+        } else {
+            $this->removeSeriesCompletedPost($user, $series);
         }
 
         return response()->json(array_merge([
@@ -395,6 +403,8 @@ class CapyShowTimeController extends Controller
 
         if (($result['user_status'] ?? null) === 'completed' && $episode->series) {
             $this->syncSeriesCompletedPost($user, $episode->series);
+        } elseif ($episode->series) {
+            $this->removeSeriesCompletedPost($user, $episode->series);
         }
 
         return response()->json(array_merge([
@@ -568,7 +578,7 @@ class CapyShowTimeController extends Controller
                     'category' => 'entertainment',
                     'entertainment_type' => 'series',
                     'watched_at' => now(),
-                    'content' => "Comentou no episódio {$epCode} ({$episode->name}) de {$series->name}: \"{$commentPreview}\"",
+                    'content' => $comment->is_spoiler ? '[Contém spoiler]' : $comment->content,
                     'metadata' => [
                         'type' => 'comment',
                         'series_id' => $series->id,
@@ -798,6 +808,51 @@ class CapyShowTimeController extends Controller
     {
         Post::where('external_source', 'capyshowtime')
             ->where('external_id', "capyshowtime:series_completed:{$series->id}:user:{$user->id}")
+            ->delete();
+    }
+
+    /**
+     * Sincroniza post de série abandonada no feed da Capihouse
+     */
+    private function syncSeriesDroppedPost(User $user, CapySeries $series): void
+    {
+        try {
+            $post = Post::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'external_source' => 'capyshowtime',
+                    'external_id' => "capyshowtime:series_dropped:{$series->id}:user:{$user->id}",
+                ],
+                [
+                    'category' => 'entertainment',
+                    'entertainment_type' => 'series',
+                    'watched_at' => now(),
+                    'content' => "Abandonou a série {$series->name}. 🛑",
+                    'metadata' => [
+                        'type' => 'dropped',
+                        'series_id' => $series->id,
+                        'tmdb_id' => $series->tmdb_id,
+                        'series_name' => $series->name,
+                        'poster_url' => $series->poster_url,
+                        'number_of_seasons' => $series->number_of_seasons,
+                    ],
+                ]
+            );
+
+            $post->load('user:id,name,username,avatar_url');
+            broadcast(new PostCreated($post));
+        } catch (\Throwable $e) {
+            Log::warning('Erro ao criar post de abandono de série no CapyShowTime: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Remove eventual post de série abandonada quando o status deixa de ser dropped
+     */
+    private function removeSeriesDroppedPost(User $user, CapySeries $series): void
+    {
+        Post::where('external_source', 'capyshowtime')
+            ->where('external_id', "capyshowtime:series_dropped:{$series->id}:user:{$user->id}")
             ->delete();
     }
 }
