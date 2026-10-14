@@ -611,6 +611,116 @@ class CapyShowTimeController extends Controller
     }
 
     /**
+     * Sincronizar episódio como assistido via TMDB ID (usado pela CapyFlix)
+     */
+    public function syncWatchedByTmdb(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tmdb_id' => 'required|integer',
+            'season_number' => 'required|integer',
+            'episode_number' => 'required|integer',
+            'is_watched' => 'nullable|boolean',
+        ]);
+
+        $user = $request->user();
+        $series = $this->service->syncSeriesFromTmdb($validated['tmdb_id']);
+        if (! $series) {
+            return response()->json(['message' => 'Série não encontrada no TMDB'], 404);
+        }
+
+        $episode = CapyEpisode::where('series_id', $series->id)
+            ->where('season_number', $validated['season_number'])
+            ->where('episode_number', $validated['episode_number'])
+            ->first();
+
+        if (! $episode) {
+            $this->service->syncSeasonFromTmdb($series, $validated['season_number']);
+            $episode = CapyEpisode::where('series_id', $series->id)
+                ->where('season_number', $validated['season_number'])
+                ->where('episode_number', $validated['episode_number'])
+                ->first();
+        }
+
+        if ($episode) {
+            CapyUserEpisode::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'episode_id' => $episode->id,
+                ],
+                [
+                    'series_id' => $series->id,
+                    'is_watched' => $validated['is_watched'] ?? true,
+                    'watched_at' => now(),
+                ]
+            );
+
+            $userSeries = CapyUserSeries::firstOrCreate(
+                ['user_id' => $user->id, 'series_id' => $series->id],
+                ['status' => 'watching']
+            );
+            if ($userSeries->status === 'plan_to_watch') {
+                $userSeries->update(['status' => 'watching']);
+            }
+
+            return response()->json([
+                'success' => true,
+                'episode_id' => $episode->id,
+                'is_watched' => true,
+                'series_name' => $series->name,
+            ]);
+        }
+
+        return response()->json(['message' => 'Episódio não localizado'], 404);
+    }
+
+    /**
+     * Atualizar comentário de episódio
+     */
+    public function updateComment(int $commentId, Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'content' => 'required|string|min:1|max:3000',
+            'is_spoiler' => 'nullable|boolean',
+        ]);
+
+        $comment = CapyEpisodeComment::with('user:id,name,username,avatar_url')->findOrFail($commentId);
+
+        if ($comment->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'Não autorizado a editar este comentário'], 403);
+        }
+
+        $comment->update([
+            'content' => $validated['content'],
+            'is_spoiler' => $validated['is_spoiler'] ?? $comment->is_spoiler,
+        ]);
+
+        return response()->json([
+            'id' => $comment->id,
+            'user' => $comment->user,
+            'content' => $comment->content,
+            'is_spoiler' => (bool) $comment->is_spoiler,
+            'updated_at' => 'agora',
+        ]);
+    }
+
+    /**
+     * Excluir comentário de episódio
+     */
+    public function deleteComment(int $commentId, Request $request): JsonResponse
+    {
+        $comment = CapyEpisodeComment::findOrFail($commentId);
+
+        if ($comment->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'Não autorizado a excluir este comentário'], 403);
+        }
+
+        $comment->likes()->delete();
+        $comment->delete();
+
+        return response()->json(['message' => 'Comentário removido com sucesso']);
+    }
+
+    /**
      * Curtir ou descurtir comentário
      */
     public function toggleCommentLike(int $commentId, Request $request): JsonResponse

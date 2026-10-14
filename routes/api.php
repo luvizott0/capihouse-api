@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\LogoutController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\CapsuleController;
+use App\Http\Controllers\Api\CapyGamesController;
 use App\Http\Controllers\Api\CapyShowTimeController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\GameReviewController;
@@ -164,9 +165,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/episodes/rate', [CapyShowTimeController::class, 'rateEpisode']);
             Route::post('/episodes/watch-previous', [CapyShowTimeController::class, 'markPreviousEpisodes']);
             Route::get('/my-list', [CapyShowTimeController::class, 'myList']);
-            Route::get('/up-next', [CapyShowTimeController::class, 'upNext']);
+            Route::post('/episodes/sync-watch', [CapyShowTimeController::class, 'syncWatchedByTmdb']);
             Route::get('/episodes/{episodeId}/comments', [CapyShowTimeController::class, 'getEpisodeComments']);
             Route::post('/episodes/comments', [CapyShowTimeController::class, 'addEpisodeComment']);
+            Route::put('/comments/{commentId}', [CapyShowTimeController::class, 'updateComment']);
+            Route::delete('/comments/{commentId}', [CapyShowTimeController::class, 'deleteComment']);
             Route::post('/comments/{commentId}/like', [CapyShowTimeController::class, 'toggleCommentLike']);
             Route::get('/community-activity', [CapyShowTimeController::class, 'communityActivity']);
             Route::get('/users', [CapyShowTimeController::class, 'users']);
@@ -184,6 +187,23 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::match(['put', 'patch', 'post'], '/memories/{id}', [CapsuleController::class, 'update']);
             Route::delete('/memories/{id}', [CapsuleController::class, 'destroy']);
             Route::post('/memories/{id}/toggle-favorite', [CapsuleController::class, 'toggleFavorite']);
+        });
+
+        // CapyGames (Gaming Tracker, Backlog & Community)
+        Route::prefix('capygames')->group(function () {
+            Route::get('/search', [CapyGamesController::class, 'search']);
+            Route::get('/popular', [CapyGamesController::class, 'popular']);
+            Route::get('/games/{id}', [CapyGamesController::class, 'showGame']);
+            Route::get('/my-library', [CapyGamesController::class, 'myLibrary']);
+            Route::post('/library/status', [CapyGamesController::class, 'setStatus']);
+            Route::delete('/library/{id}', [CapyGamesController::class, 'removeGame']);
+            Route::get('/feed', [CapyGamesController::class, 'communityFeed']);
+            Route::get('/users', [CapyGamesController::class, 'users']);
+            Route::get('/users/{id}', [CapyGamesController::class, 'userProfile']);
+            Route::post('/connect/steam', [CapyGamesController::class, 'connectSteam']);
+            Route::post('/disconnect/steam', [CapyGamesController::class, 'disconnectSteam']);
+            Route::post('/sync/steam', [CapyGamesController::class, 'syncSteam']);
+            Route::post('/sync/xbox', [CapyGamesController::class, 'syncXbox']);
         });
 
         // Admin
