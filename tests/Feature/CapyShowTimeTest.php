@@ -6,6 +6,7 @@ use App\Models\CapyEpisode;
 use App\Models\CapyEpisodeComment;
 use App\Models\CapySeason;
 use App\Models\CapySeries;
+use App\Models\CapyUserEpisode;
 use App\Models\CapyUserSeries;
 use App\Models\User;
 use App\Services\CapyShowTimeService;
@@ -624,5 +625,57 @@ class CapyShowTimeTest extends TestCase
             'external_source' => 'capyshowtime',
             'content' => 'Esse episódio foi sensacional!',
         ]);
+    }
+
+    public function test_friends_watching_and_top_rated_endpoints(): void
+    {
+        $series = CapySeries::create([
+            'tmdb_id' => 999123,
+            'name' => 'Community Top Series',
+            'poster_path' => '/poster.jpg',
+            'genres' => ['Ação', 'Animação'],
+        ]);
+
+        $season = CapySeason::create([
+            'series_id' => $series->id,
+            'season_number' => 1,
+            'name' => 'Temporada 1',
+        ]);
+
+        $episode = CapyEpisode::create([
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'name' => 'Capítulo 1',
+        ]);
+
+        CapyUserEpisode::create([
+            'user_id' => $this->user->id,
+            'series_id' => $series->id,
+            'season_id' => $season->id,
+            'episode_id' => $episode->id,
+            'is_watched' => true,
+            'rating' => 9.5,
+            'watched_at' => now(),
+        ]);
+
+        // Teste autenticado
+        $resWatching = $this->actingAs($this->user, 'sanctum')->getJson('/api/capyshowtime/friends-watching');
+        $resWatching->assertStatus(200);
+        $this->assertNotEmpty($resWatching->json());
+        $this->assertEquals('Community Top Series', $resWatching->json('0.title'));
+
+        $resTopRated = $this->actingAs($this->user, 'sanctum')->getJson('/api/capyshowtime/friends-top-rated');
+        $resTopRated->assertStatus(200);
+        $this->assertNotEmpty($resTopRated->json());
+        $this->assertEquals(9.5, $resTopRated->json('0.friends_rating'));
+
+        // Teste público para a CapyFlix / visitantes
+        $resPublicWatching = $this->getJson('/api/capyshowtime/public/friends-watching');
+        $resPublicWatching->assertStatus(200);
+
+        $resPublicTopRated = $this->getJson('/api/capyshowtime/public/friends-top-rated');
+        $resPublicTopRated->assertStatus(200);
     }
 }

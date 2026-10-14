@@ -43,6 +43,13 @@ Route::get('/auth/dev-users', [ImpersonateController::class, 'devUsers']);
 // Spotify public callback (redirect from Spotify OAuth)
 Route::match(['get', 'post'], '/spotify/callback', [SpotifyController::class, 'callback']);
 
+// CapyShowTime & CapyFlix public feed endpoints
+Route::prefix('capyshowtime/public')->group(function () {
+    Route::get('/trending', [CapyShowTimeController::class, 'trending']);
+    Route::get('/friends-watching', [CapyShowTimeController::class, 'friendsWatching']);
+    Route::get('/friends-top-rated', [CapyShowTimeController::class, 'friendsTopRated']);
+});
+
 // Authenticated routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [LogoutController::class, 'logout']);
@@ -172,6 +179,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/comments/{commentId}', [CapyShowTimeController::class, 'deleteComment']);
             Route::post('/comments/{commentId}/like', [CapyShowTimeController::class, 'toggleCommentLike']);
             Route::get('/community-activity', [CapyShowTimeController::class, 'communityActivity']);
+            Route::get('/friends-watching', [CapyShowTimeController::class, 'friendsWatching']);
+            Route::get('/friends-top-rated', [CapyShowTimeController::class, 'friendsTopRated']);
             Route::get('/users', [CapyShowTimeController::class, 'users']);
             Route::get('/users/{userId}', [CapyShowTimeController::class, 'userProfile']);
         });

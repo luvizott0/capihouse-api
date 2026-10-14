@@ -787,6 +787,110 @@ class CapyShowTimeController extends Controller
     }
 
     /**
+     * O que os amigos estão assistindo atualmente na CapiHouse
+     */
+    public function friendsWatching(Request $request): JsonResponse
+    {
+        $limit = min(20, max(1, (int) $request->input('limit', 12)));
+
+        $recentEpisodes = CapyUserEpisode::with([
+            'user:id,name,username,avatar_url',
+            'series:id,tmdb_id,name,poster_path,backdrop_path,vote_average',
+            'episode:id,season_number,episode_number,name',
+        ])
+            ->where('is_watched', true)
+            ->whereHas('user')
+            ->whereHas('series')
+            ->orderByDesc('watched_at')
+            ->limit(50)
+            ->get();
+
+        $grouped = [];
+        foreach ($recentEpisodes as $ue) {
+            $seriesId = $ue->series_id;
+            if (! isset($grouped[$seriesId])) {
+                $time = $ue->watched_at ?? $ue->updated_at;
+                $grouped[$seriesId] = [
+                    'series_id' => $ue->series->id,
+                    'tmdb_id' => $ue->series->tmdb_id,
+                    'title' => $ue->series->name,
+                    'poster_url' => $ue->series->poster_url,
+                    'backdrop_url' => $ue->series->backdrop_url,
+                    'vote_average' => $ue->series->vote_average,
+                    'latest_episode' => $ue->episode ? [
+                        'season' => $ue->episode->season_number,
+                        'episode' => $ue->episode->episode_number,
+                        'name' => $ue->episode->name,
+                    ] : null,
+                    'last_watched_at' => $time ? $time->diffForHumans() : 'recentemente',
+                    'friends' => [],
+                ];
+            }
+
+            $friendExists = collect($grouped[$seriesId]['friends'])->contains('id', $ue->user->id);
+            if (! $friendExists) {
+                $grouped[$seriesId]['friends'][] = [
+                    'id' => $ue->user->id,
+                    'name' => $ue->user->name,
+                    'username' => $ue->user->username,
+                    'avatar_url' => $ue->user->avatar_url,
+                ];
+            }
+        }
+
+        return response()->json(array_slice(array_values($grouped), 0, $limit));
+    }
+
+    /**
+     * Séries preferidas e melhores avaliadas pelos amigos da CapiHouse
+     */
+    public function friendsTopRated(Request $request): JsonResponse
+    {
+        $limit = min(20, max(1, (int) $request->input('limit', 12)));
+
+        $series = CapySeries::whereHas('userEpisodes', function ($q) {
+            $q->whereNotNull('rating')->where('rating', '>', 0);
+        })
+            ->withAvg(['userEpisodes' => function ($q) {
+                $q->whereNotNull('rating')->where('rating', '>', 0);
+            }], 'rating')
+            ->withCount(['userEpisodes' => function ($q) {
+                $q->whereNotNull('rating')->where('rating', '>', 0);
+            }])
+            ->orderByDesc('user_episodes_avg_rating')
+            ->orderByDesc('user_episodes_count')
+            ->limit($limit)
+            ->get()
+            ->map(function ($s) {
+                $topReviewers = CapyUserEpisode::with('user:id,name,username,avatar_url')
+                    ->where('series_id', $s->id)
+                    ->whereNotNull('rating')
+                    ->where('rating', '>=', 6)
+                    ->orderByDesc('rating')
+                    ->limit(3)
+                    ->get()
+                    ->pluck('user')
+                    ->filter()
+                    ->unique('id')
+                    ->values();
+
+                return [
+                    'series_id' => $s->id,
+                    'tmdb_id' => $s->tmdb_id,
+                    'title' => $s->name,
+                    'poster_url' => $s->poster_url,
+                    'backdrop_url' => $s->backdrop_url,
+                    'genres' => $s->genres,
+                    'friends_rating' => round($s->user_episodes_avg_rating, 1),
+                    'ratings_count' => $s->user_episodes_count,
+                    'friends' => $topReviewers,
+                ];
+            });
+
+        return response()->json($series);
+    }
+
+    /**
      * Perfil de um usuário no CapyShowTime (estatísticas, notas e séries)
      */
     public function userProfile(int $userId): JsonResponse
