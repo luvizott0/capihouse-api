@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\LogoutController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\CapsuleController;
+use App\Http\Controllers\Api\CapyFlixController;
 use App\Http\Controllers\Api\CapyGamesController;
 use App\Http\Controllers\Api\CapyShowTimeController;
 use App\Http\Controllers\Api\EventController;
@@ -48,6 +49,18 @@ Route::prefix('capyshowtime/public')->group(function () {
     Route::get('/trending', [CapyShowTimeController::class, 'trending']);
     Route::get('/friends-watching', [CapyShowTimeController::class, 'friendsWatching']);
     Route::get('/friends-top-rated', [CapyShowTimeController::class, 'friendsTopRated']);
+});
+
+// CapyFlix (Streaming Híbrido, Gerenciador NAS 300GB & Debrid)
+Route::prefix('capyflix')->group(function () {
+    Route::get('/storage', [CapyFlixController::class, 'storage']);
+    Route::delete('/file', [CapyFlixController::class, 'deleteFile']);
+    Route::get('/downloads', [CapyFlixController::class, 'downloads']);
+    Route::post('/download', [CapyFlixController::class, 'startDownload']);
+    Route::delete('/download/{id}', [CapyFlixController::class, 'cancelDownload']);
+    Route::get('/resolve-streams', [CapyFlixController::class, 'resolveStreams']);
+    Route::get('/debrid-config', [CapyFlixController::class, 'getDebridConfig']);
+    Route::post('/debrid-config', [CapyFlixController::class, 'saveDebridConfig']);
 });
 
 // Authenticated routes

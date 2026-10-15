@@ -3,12 +3,16 @@
 namespace App\Services;
 
 use App\Events\PostCreated;
+use App\Models\CapyGame;
+use App\Models\CapyGameActivity;
+use App\Models\CapyUserGame;
 use App\Models\Post;
 use App\Models\User;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class XboxSyncService
 {
@@ -242,53 +246,115 @@ class XboxSyncService
                     'xbox_title_id' => $titleId,
                 ];
 
-                if ($existingPost) {
-                    // Atualiza post se houve evolução no progresso ou Gamerscore
-                    $prevScore = $existingPost->metadata['gamerscore'] ?? 0;
-                    if ($currentGamerscore > $prevScore || $isMastered) {
+                // 1. Atualizar ou criar no catálogo CapyGames
+                $capyGame = CapyGame::firstOrCreate(
+                    [
+                        'external_source' => 'xbox',
+                        'external_id' => "xbox:{$titleId}",
+                    ],
+                    [
+                        'title' => $titleName,
+                        'slug' => Str::slug($titleName),
+                        'cover_url' => $boxArtUrl,
+                        'platforms' => [$platform],
+                    ]
+                );
+
+                // 2. Atualizar ou criar na biblioteca do usuário CapyGames
+                $userGame = CapyUserGame::firstOrNew([
+                    'user_id' => $user->id,
+                    'game_id' => $capyGame->id,
+                ]);
+
+                $prevScore = $userGame->gamerscore_earned ?? 0;
+                $prevAchievements = $userGame->achievements_earned ?? 0;
+                $isNewProgression = ($currentGamerscore > $prevScore) || ($currentAchievements > $prevAchievements);
+
+                $userGame->status = $isMastered ? 'mastered' : ($userGame->status ?: 'playing');
+                $userGame->platform = $platform;
+                $userGame->achievements_earned = $currentAchievements;
+                $userGame->achievements_total = $totalAchievements;
+                $userGame->gamerscore_earned = $currentGamerscore;
+                $userGame->gamerscore_total = $totalGamerscore;
+                $userGame->source = 'xbox';
+                if ($isMastered && empty($userGame->completed_at)) {
+                    $userGame->completed_at = $playedAt;
+                }
+                $userGame->save();
+
+                // 3. Registrar no Feed dedicado do CapyGames (conquistas e progresso aparecem aqui!)
+                if ($isNewProgression || ! $userGame->exists) {
+                    $earnedDiff = $currentGamerscore - $prevScore;
+                    $achDiff = $currentAchievements - $prevAchievements;
+                    $activityTitle = $isMastered
+                        ? "🏆 Miletou / Fez 1000G em {$titleName}!"
+                        : ($achDiff > 0 ? "🎮 Desbloqueou {$achDiff} conquista(s) em {$titleName} (+{$earnedDiff}G)" : "🎮 Jogando {$titleName} no Xbox");
+
+                    CapyGameActivity::create([
+                        'user_id' => $user->id,
+                        'game_id' => $capyGame->id,
+                        'type' => $isMastered ? 'achievement' : 'status_change',
+                        'title' => $activityTitle,
+                        'metadata' => [
+                            'gamerscore' => $currentGamerscore,
+                            'gamerscore_total' => $totalGamerscore,
+                            'achievements_count' => $currentAchievements,
+                            'achievements_total' => $totalAchievements,
+                            'progress_percentage' => $progressPct,
+                            'game_title' => $titleName,
+                            'cover_url' => $boxArtUrl,
+                        ],
+                        'created_at' => $playedAt,
+                    ]);
+                }
+
+                // 4. Feed Geral da Capihouse: Apenas jogos completados / platinados (mastered) vão para a home
+                if ($isMastered) {
+                    $existingPost = Post::where('user_id', $user->id)
+                        ->where('external_source', 'xbox')
+                        ->where('external_id', $externalId)
+                        ->first();
+
+                    if ($existingPost) {
                         $existingPost->update([
                             'metadata' => array_merge($existingPost->metadata ?? [], $metadata),
                             'watched_at' => $playedAt,
                             'updated_at' => now(),
                         ]);
-                        $importedCount++;
-                    }
-                } else {
-                    // Posts sincronizados do Xbox não geram texto pré-fabricado
-                    $celebrationContent = null;
-
-                    $newPost = Post::create([
-                        'user_id' => $user->id,
-                        'category' => 'entertainment',
-                        'entertainment_type' => 'game',
-                        'external_source' => 'xbox',
-                        'external_id' => $externalId,
-                        'watched_at' => $playedAt,
-                        'content' => $celebrationContent,
-                        'metadata' => $metadata,
-                        'created_at' => $playedAt,
-                        'updated_at' => now(),
-                    ]);
-
-                    try {
-                        $newPost->load([
-                            'user',
-                            'media',
-                            'comments.user',
-                            'comments.parent.user',
-                            'comments.mentions',
-                            'mentions',
+                    } else {
+                        $newPost = Post::create([
+                            'user_id' => $user->id,
+                            'category' => 'entertainment',
+                            'entertainment_type' => 'game',
+                            'external_source' => 'xbox',
+                            'external_id' => $externalId,
+                            'watched_at' => $playedAt,
+                            'content' => null,
+                            'metadata' => $metadata,
+                            'created_at' => $playedAt,
+                            'updated_at' => now(),
                         ]);
-                        $newPost->is_liked = false;
-                        $newPost->likes_count = 0;
-                        $newPost->comments_count = 0;
-                        broadcast(new PostCreated($newPost));
-                    } catch (\Throwable $e) {
-                        report($e);
-                    }
 
-                    $importedCount++;
+                        try {
+                            $newPost->load([
+                                'user',
+                                'media',
+                                'comments.user',
+                                'comments.parent.user',
+                                'comments.mentions',
+                                'mentions',
+                            ]);
+                            $newPost->is_liked = false;
+                            $newPost->likes_count = 0;
+                            $newPost->comments_count = 0;
+                            broadcast(new PostCreated($newPost));
+                        } catch (\Throwable $e) {
+                            report($e);
+                        }
+                    }
                 }
+
+                $importedCount++;
             }
 
             $user->update(['xbox_last_synced_at' => now()]);

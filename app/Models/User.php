@@ -42,6 +42,9 @@ class User extends Authenticatable
         'xbox_gamertag',
         'xbox_xuid',
         'xbox_last_synced_at',
+        'steam_id',
+        'steam_username',
+        'steam_last_synced_at',
         'last_seen_at',
         'theme',
         'notification_preferences',
@@ -67,6 +70,7 @@ class User extends Authenticatable
             'birth' => 'date',
             'letterboxd_last_synced_at' => 'datetime',
             'xbox_last_synced_at' => 'datetime',
+            'steam_last_synced_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'theme' => 'array',
             'notification_preferences' => 'array',
@@ -299,5 +303,15 @@ class User extends Authenticatable
     public function capyUserEpisodes()
     {
         return $this->hasMany(CapyUserEpisode::class);
+    }
+
+    public function capyUserGames()
+    {
+        return $this->hasMany(CapyUserGame::class);
+    }
+
+    public function capyGameActivities()
+    {
+        return $this->hasMany(CapyGameActivity::class);
     }
 }

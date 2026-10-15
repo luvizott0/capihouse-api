@@ -195,14 +195,25 @@ class XboxAndGameEntertainmentTest extends TestCase
         $this->assertEquals('mastered', $haloPost->metadata['game_status']);
         $this->assertNull($haloPost->content);
 
-        // Forza deve estar como 'playing'
+        // Forza NÃO deve gerar post no feed da Capihouse por ser apenas progresso intermediário (regra CapyGames)
         $forzaPost = Post::where('user_id', $user->id)
             ->where('external_id', "xbox-{$user->id}-1002")
             ->first();
 
-        $this->assertNotNull($forzaPost);
-        $this->assertEquals('playing', $forzaPost->metadata['game_status']);
-        $this->assertEquals(300, $forzaPost->metadata['gamerscore']);
+        $this->assertNull($forzaPost);
+
+        // Mas ambos devem estar na biblioteca do CapyGames
+        $this->assertDatabaseHas('capy_user_games', [
+            'user_id' => $user->id,
+            'gamerscore_earned' => 1000,
+            'status' => 'mastered',
+        ]);
+
+        $this->assertDatabaseHas('capy_user_games', [
+            'user_id' => $user->id,
+            'gamerscore_earned' => 300,
+            'status' => 'playing',
+        ]);
     }
 
     public function test_user_can_create_manual_game_review()

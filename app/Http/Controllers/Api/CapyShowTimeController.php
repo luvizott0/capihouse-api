@@ -10,6 +10,7 @@ use App\Models\CapyEpisodeCommentLike;
 use App\Models\CapySeries;
 use App\Models\CapyUserEpisode;
 use App\Models\CapyUserSeries;
+use App\Models\CapyUserWatchProgress;
 use App\Models\Post;
 use App\Models\User;
 use App\Services\CapyShowTimeService;
@@ -679,7 +680,7 @@ class CapyShowTimeController extends Controller
     public function getWatchProgress(Request $request): JsonResponse
     {
         $user = $request->user();
-        $progress = \App\Models\CapyUserWatchProgress::where('user_id', $user->id)
+        $progress = CapyUserWatchProgress::where('user_id', $user->id)
             ->orderBy('last_watched_at', 'desc')
             ->get();
 
@@ -702,7 +703,7 @@ class CapyShowTimeController extends Controller
 
         $user = $request->user();
 
-        $entry = \App\Models\CapyUserWatchProgress::updateOrCreate(
+        $entry = CapyUserWatchProgress::updateOrCreate(
             [
                 'user_id' => $user->id,
                 'media_id' => $validated['media_id'],
