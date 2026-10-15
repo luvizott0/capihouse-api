@@ -674,6 +674,56 @@ class CapyShowTimeController extends Controller
     }
 
     /**
+     * Retorna todo o histórico de progresso de visualização do usuário (para CapyFlix)
+     */
+    public function getWatchProgress(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $progress = \App\Models\CapyUserWatchProgress::where('user_id', $user->id)
+            ->orderBy('last_watched_at', 'desc')
+            ->get();
+
+        return response()->json($progress);
+    }
+
+    /**
+     * Salva ou atualiza a posição e progresso de reprodução do vídeo/episódio no banco de dados
+     */
+    public function saveWatchProgress(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'media_id' => 'required|string',
+            'season_index' => 'required|integer',
+            'episode_index' => 'required|integer',
+            'time' => 'required|integer',
+            'duration' => 'required|integer',
+            'completed' => 'nullable|boolean',
+        ]);
+
+        $user = $request->user();
+
+        $entry = \App\Models\CapyUserWatchProgress::updateOrCreate(
+            [
+                'user_id' => $user->id,
+                'media_id' => $validated['media_id'],
+                'season_index' => $validated['season_index'],
+                'episode_index' => $validated['episode_index'],
+            ],
+            [
+                'time' => $validated['time'],
+                'duration' => $validated['duration'],
+                'completed' => $validated['completed'] ?? false,
+                'last_watched_at' => now(),
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'progress' => $entry,
+        ]);
+    }
+
+    /**
      * Atualizar comentário de episódio
      */
     public function updateComment(int $commentId, Request $request): JsonResponse
