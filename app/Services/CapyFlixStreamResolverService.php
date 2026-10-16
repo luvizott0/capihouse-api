@@ -52,6 +52,23 @@ class CapyFlixStreamResolverService
         $episode = (int) ($params['episode'] ?? 1);
         $userToken = $params['token'] ?? null;
         $userProvider = $params['provider'] ?? null;
+        $preferredAudio = $params['preferred_audio'] ?? null;
+        $isAnimation = filter_var($params['is_animation'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        $genres = (array) ($params['genres'] ?? []);
+        foreach ($genres as $g) {
+            $gUpper = strtoupper((string) $g);
+            if (str_contains($gUpper, 'ANIMA') || str_contains($gUpper, 'CARTOON') || str_contains($gUpper, 'ANIME')) {
+                $isAnimation = true;
+                break;
+            }
+        }
+        if (in_array($mediaType, ['anime', 'cartoon'])) {
+            $isAnimation = true;
+        }
+
+        $includeP2p = filter_var($params['include_p2p'] ?? true, FILTER_VALIDATE_BOOLEAN);
+        $blockForeign = filter_var($params['block_foreign'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         $token = $userToken ?: Cache::get('capyflix:debrid_token', env('CAPYFLIX_DEBRID_TOKEN', ''));
         $provider = $userProvider ?: Cache::get('capyflix:debrid_provider', env('CAPYFLIX_DEBRID_PROVIDER', 'torbox'));
@@ -69,6 +86,8 @@ class CapyFlixStreamResolverService
                     'badge' => 'LOCAL • MAX',
                     'isDirectVideo' => true,
                     'is_local' => true,
+                    'has_portuguese' => true,
+                    'audio_type' => 'local',
                 ];
             }
         }
@@ -88,12 +107,23 @@ class CapyFlixStreamResolverService
 
         // 1. Se possuir Token de Torbox ou Real-Debrid configurado, consulta direto via Torrentio Debrid
         if (! empty($token)) {
-            $streams = $this->fetchDebridStreams($imdbId, $mediaType, $season, $episode, $provider, $token);
+            $debridStreams = $this->fetchDebridStreams($imdbId, $mediaType, $season, $episode, $provider, $token);
+            $streams = array_merge($streams, $debridStreams);
         }
 
-        // 2. Se não tiver streams diretos ou não tiver token, consulta índices abertos para permitir "Baixar no NAS"
-        if (empty($streams)) {
-            $streams = $this->fetchPublicTorrentioStreams($imdbId, $mediaType, $season, $episode, $title);
+        // 2. Consulta índices abertos para P2P / qBittorrent se solicitado ou se não houver streams debrid
+        if ($includeP2p || count($streams) <= 1) {
+            $p2pStreams = $this->fetchPublicTorrentioStreams(
+                $imdbId,
+                $mediaType,
+                $season,
+                $episode,
+                $title,
+                $isAnimation,
+                $preferredAudio,
+                $blockForeign
+            );
+            $streams = array_merge($streams, $p2pStreams);
         }
 
         return $streams;
@@ -253,73 +283,90 @@ class CapyFlixStreamResolverService
 
     /**
      * Avalia e pontua um título de torrent de acordo com a preferência do usuário:
-     * - Animações / Desenhos / Animes: preferência por ÁUDIO DUBLADO (PT-BR).
-     * - Filmes e Séries: preferência por ÁUDIO ORIGINAL com legendas em português (ou Dual).
+     * - Animações / Desenhos / Animes: preferência por ÁUDIO DUBLADO (PT-BR), depois legendado PT-BR.
+     * - Filmes e Séries Live-Action: preferência por ÁUDIO ORIGINAL com legendas em português (ou Dual).
+     * - Suporta seleção explícita: 'dub' (apenas/preferência dublado) ou 'sub' (apenas/preferência legendado).
+     * - Penaliza severamente releases em inglês puro sem legendas ou áudio em português.
      */
-    public function evaluateTorrentPreference(string $rawTitle, string $mediaType): array
-    {
+    public function evaluateTorrentPreference(
+        string $rawTitle,
+        string $mediaType,
+        bool $isAnimation = false,
+        ?string $preferredAudio = null
+    ): array {
         $lower = mb_strtolower($rawTitle, 'UTF-8');
         $score = 0;
-        $isAnimation = in_array($mediaType, ['anime', 'cartoon']);
 
-        $hasDub = (bool) preg_match('/(?:dublado|dub\b|dual|pt-br|ptbr|portugu[eê]s|nacional|brazilian|🇧🇷)/i', $lower);
+        $isAnimation = $isAnimation || in_array($mediaType, ['anime', 'cartoon']);
+
+        $hasDub = (bool) preg_match('/(?:dublado|dub\b|dual[\s\.\-_]*[aá]udio|dual|pt-br|ptbr|brazilian|nacional|🇧🇷)/i', $lower);
 
         // Evita falsos positivos como "Rus Sub", "Ita Sub", "Fre Sub" serem considerados legendas em português
         $isForeignSubOnly = (bool) preg_match('/(?:rus|russian|ita|italian|fre|french|ger|german|spa|spanish|kor|chi|polish|pol)\s*sub/i', $lower);
-        $hasPtSub = (bool) preg_match('/(?:legendado|leg\s*pt|sub\s*pt|legendas?(?:\s+em)?\s+pt|pt-br\s*sub|sub\s*pt-br|pob\b)/i', $lower);
+        $hasPtSub = (bool) preg_match('/(?:legendado|leg\s*pt|sub\s*pt|legendas?(?:\s+em)?\s+pt|pt-br\s*sub|sub\s*pt-br|pob\b|🇵🇹|🇧🇷|portuguese\s*(?:sub|legend))/iu', $rawTitle);
         $hasGenericSub = ((bool) preg_match('/(?:legendado|leg\b|subbed|legendas)/i', $lower)) && ! $isForeignSubOnly;
         $hasSub = $hasPtSub || $hasGenericSub;
 
-        $hasOriginal = (bool) preg_match('/(?:original|eng|english|multi|dual|jap|japanese|bluray|web-dl|hevc|x265|1080p|720p)/i', $lower);
-
+        $hasPortuguese = $hasDub || $hasPtSub;
         $badge = 'P2P TORRENT';
         $prefMatch = false;
 
-        if ($isAnimation) {
-            // Regra 1: Animações clássicas -> Preferência por DUBLADO
+        // Se o usuário especificou preferência explícita
+        if ($preferredAudio === 'dub') {
             if ($hasDub) {
-                $score += 1000;
+                $score += 2500;
                 $badge = '🇧🇷 DUB PT-BR ★';
                 $prefMatch = true;
-            } elseif ($hasSub) {
-                $score += 300;
-                $badge = 'LEGENDADO';
-            } else {
-                $score += 100;
-                $badge = 'ÁUDIO ORIGINAL';
-            }
-        } else {
-            // Regra 2: Filmes e Séries -> Preferência por ÁUDIO ORIGINAL com legendas em português (ou Dual)
-            if ($hasOriginal && ($hasPtSub || preg_match('/(?:dual|pt-br|brazilian)/i', $lower))) {
-                $score += 1000;
-                $badge = 'ORIGINAL • LEG PT-BR ★';
-                $prefMatch = true;
             } elseif ($hasPtSub) {
-                $score += 850;
-                $badge = 'ORIGINAL LEG PT-BR';
-                $prefMatch = true;
-            } elseif (preg_match('/(?:dual|pt-br)/i', $lower)) {
-                $score += 750;
-                $badge = 'DUAL ÁUDIO PT-BR';
-                $prefMatch = true;
-            } elseif (str_contains($lower, 'multi')) {
-                $score += 450;
-                $badge = 'MULTI ÁUDIO';
-            } elseif ($hasGenericSub) {
-                $score += 450;
-                $badge = 'ORIGINAL LEGENDADO';
+                $score += 400;
+                $badge = '💬 LEGENDADO PT-BR';
+            } else {
+                $score -= 4000;
+                $badge = '⚠️ INGLÊS (SEM LEG PT)';
+            }
+        } elseif ($preferredAudio === 'sub') {
+            if ($hasPtSub) {
+                $score += 2500;
+                $badge = '💬 LEGENDADO PT-BR ★';
                 $prefMatch = true;
             } elseif ($hasDub) {
-                // Dublado puro tem menor pontuação para filmes/séries pois a preferência é áudio original
-                $score += 200;
-                $badge = 'DUBLADO';
+                $score += 600;
+                $badge = '🇧🇷 DUB PT-BR';
             } else {
-                $score += 400;
-                $badge = 'ÁUDIO ORIGINAL HD';
+                $score -= 4000;
+                $badge = '⚠️ INGLÊS (SEM LEG PT)';
+            }
+        } elseif ($isAnimation) {
+            // Regra 1: Animações -> Preferência máxima por DUBLADO PT-BR, depois LEGENDADO PT-BR
+            if ($hasDub) {
+                $score += 2000;
+                $badge = '🇧🇷 DUB PT-BR ★';
+                $prefMatch = true;
+            } elseif ($hasPtSub) {
+                $score += 1200;
+                $badge = '💬 LEGENDADO PT-BR ★';
+                $prefMatch = true;
+            } else {
+                $score -= 3500;
+                $badge = '⚠️ INGLÊS (SEM LEG PT)';
+            }
+        } else {
+            // Regra 2: Filmes e Séries Live-Action -> Preferência por ÁUDIO ORIGINAL com legendas em português (ou Dual)
+            if ($hasPtSub) {
+                $score += 1800;
+                $badge = '💬 ORIGINAL • LEG PT-BR ★';
+                $prefMatch = true;
+            } elseif ($hasDub) {
+                $score += 1400;
+                $badge = '🇧🇷 DUBLADO / DUAL ★';
+                $prefMatch = true;
+            } else {
+                $score -= 3500;
+                $badge = '⚠️ INGLÊS (SEM LEG PT)';
             }
         }
 
-        // Resolução e qualidade
+        // Bônus de resolução
         if (str_contains($lower, '1080p')) {
             $score += 150;
         } elseif (str_contains($lower, '720p')) {
@@ -332,8 +379,11 @@ class CapyFlixStreamResolverService
             'score' => $score,
             'badge' => $badge,
             'preference_matched' => $prefMatch,
+            'has_portuguese' => $hasPortuguese,
+            'audio_type' => $hasDub ? 'dub' : ($hasPtSub ? 'sub' : 'foreign'),
             'is_dubbed' => $hasDub,
             'is_subbed' => $hasSub,
+            'is_subbed_pt' => $hasPtSub,
         ];
     }
 
@@ -345,7 +395,10 @@ class CapyFlixStreamResolverService
         string $mediaType,
         int $season,
         int $episode,
-        ?string $mediaTitle = null
+        ?string $mediaTitle = null,
+        bool $isAnimation = false,
+        ?string $preferredAudio = null,
+        bool $blockForeign = false
     ): array {
         $streams = [];
         $queryPath = $mediaType === 'movie' ? "movie/{$imdbId}.json" : "series/{$imdbId}:{$season}:{$episode}.json";
@@ -395,10 +448,10 @@ class CapyFlixStreamResolverService
                     }
 
                     // Avaliação de preferência (Dublado para animações / Áudio Original + Legendas para filmes e séries)
-                    $eval = $this->evaluateTorrentPreference($rawTitle, $mediaType);
+                    $eval = $this->evaluateTorrentPreference($rawTitle, $mediaType, $isAnimation, $preferredAudio);
                     $score = $eval['score'];
 
-                    // Ponderação crucial de Seeds:
+                    // Ponderação de Seeds:
                     // Torrents com 0 seeds são severamente penalizados (evita torrents mortos congelados)
                     if ($seeds === 0) {
                         $score -= 3000;
@@ -414,6 +467,9 @@ class CapyFlixStreamResolverService
                         'id' => "torrentio-{$idx}",
                         'name' => 'qBittorrent (P2P Local)',
                         'title' => "{$cleanTitle} ({$stats})",
+                        'clean_name' => $cleanTitle,
+                        'raw_title' => $rawTitle,
+                        'stats' => $stats,
                         'infoHash' => strtolower($infoHash),
                         'magnet' => $magnet,
                         'fileIdx' => $s['fileIdx'] ?? 0,
@@ -421,17 +477,29 @@ class CapyFlixStreamResolverService
                         'badge' => $eval['badge'],
                         'score' => $score,
                         'seeds' => $seeds,
+                        'audio_type' => $eval['audio_type'],
+                        'has_portuguese' => $eval['has_portuguese'],
+                        'is_dubbed' => $eval['is_dubbed'],
+                        'is_subbed' => $eval['is_subbed'],
                         'preference_matched' => $eval['preference_matched'],
                         'isDirectVideo' => ! empty($s['url']),
                         'canDownloadToNas' => true,
                     ];
                 }
 
+                // Se houver streams com português e o bloqueio estiver ativo, remove versões sem português
+                if ($blockForeign) {
+                    $ptStreams = array_filter($streams, fn ($st) => ($st['has_portuguese'] ?? false) === true);
+                    if (! empty($ptStreams)) {
+                        $streams = $ptStreams;
+                    }
+                }
+
                 // Ordena streams em ordem decrescente de pontuação de preferência + seeds
                 usort($streams, fn ($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
 
-                // Retorna os top 8 melhores
-                $streams = array_slice($streams, 0, 8);
+                // Retorna os top 12 melhores
+                $streams = array_slice($streams, 0, 12);
             }
         } catch (\Throwable $e) {
             Log::warning('Erro ao consultar Torrentio público: '.$e->getMessage());

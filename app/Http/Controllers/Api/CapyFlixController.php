@@ -75,7 +75,11 @@ class CapyFlixController extends Controller
             'season' => 'nullable|integer|min:1',
             'episode' => 'nullable|integer|min:1',
             'url' => 'nullable|string',
+            'magnet' => 'nullable|string',
+            'info_hash' => 'nullable|string',
             'expected_bytes' => 'nullable|integer|min:1',
+            'preferred_audio' => 'nullable|string|in:dub,sub,any_pt,any',
+            'is_animation' => 'nullable|boolean',
         ]);
 
         try {
@@ -188,6 +192,11 @@ class CapyFlixController extends Controller
             'tmdb_id' => 'nullable|integer',
             'imdb_id' => 'nullable|string',
             'url' => 'nullable|string',
+            'magnet' => 'nullable|string',
+            'info_hash' => 'nullable|string',
+            'preferred_audio' => 'nullable|string|in:dub,sub,any_pt,any',
+            'is_animation' => 'nullable|boolean',
+            'block_foreign' => 'nullable|boolean',
         ]);
 
         $result = $this->downloadService->batchDownload($validated);
@@ -215,6 +224,11 @@ class CapyFlixController extends Controller
             'episode' => 'nullable|integer|min:1',
             'token' => 'nullable|string',
             'provider' => 'nullable|string',
+            'preferred_audio' => 'nullable|string|in:dub,sub,any_pt,any',
+            'is_animation' => 'nullable|boolean',
+            'genres' => 'nullable|array',
+            'include_p2p' => 'nullable|boolean',
+            'block_foreign' => 'nullable|boolean',
         ]);
 
         $streams = $this->streamResolverService->resolveStreams($validated);

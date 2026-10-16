@@ -407,6 +407,11 @@ class CapyFlixDownloadService
         $tmdbId = $data['tmdb_id'] ?? null;
         $imdbId = $data['imdb_id'] ?? null;
         $providedUrl = $data['url'] ?? null;
+        $providedMagnet = $data['magnet'] ?? null;
+        $providedInfoHash = $data['info_hash'] ?? null;
+        $preferredAudio = $data['preferred_audio'] ?? null;
+        $isAnimation = filter_var($data['is_animation'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $blockForeign = filter_var($data['block_foreign'] ?? true, FILTER_VALIDATE_BOOLEAN);
 
         if ($mediaType === 'movie') {
             $episodes = [1];
@@ -463,8 +468,8 @@ class CapyFlixDownloadService
 
             // 3. Resolver URL ou Magnet de acordo com a preferência de áudio/legenda
             $url = $providedUrl;
-            $magnet = $data['magnet'] ?? null;
-            $infoHash = $data['info_hash'] ?? null;
+            $magnet = $providedMagnet;
+            $infoHash = $providedInfoHash;
 
             if (empty($url) && empty($magnet) && ($tmdbId || $imdbId || $title)) {
                 try {
@@ -475,6 +480,9 @@ class CapyFlixDownloadService
                         'media_type' => $mediaType,
                         'season' => $season,
                         'episode' => $ep,
+                        'preferred_audio' => $preferredAudio,
+                        'is_animation' => $isAnimation,
+                        'block_foreign' => $blockForeign,
                     ]);
 
                     // Primeiro verifica se há stream HTTP direto (Debrid ou CDN)
@@ -485,11 +493,18 @@ class CapyFlixDownloadService
                         }
                     }
 
-                    // Se não houver link direto HTTP, seleciona o torrent #1 (já ordenado por DUB para animações e ORIGINAL+LEG para filmes/séries)
+                    // Se não houver link direto HTTP, seleciona o melhor torrent compatível
                     if (empty($url) && ! empty($streams)) {
-                        $topTorrent = $streams[0];
-                        $magnet = $topTorrent['magnet'] ?? null;
-                        $infoHash = $topTorrent['infoHash'] ?? null;
+                        $p2p = array_values(array_filter($streams, fn ($st) => ! empty($st['magnet']) || ! empty($st['infoHash'])));
+                        if (! empty($p2p)) {
+                            $ptStreams = array_values(array_filter($p2p, fn ($st) => ($st['has_portuguese'] ?? false) === true));
+                            $chosen = (! empty($ptStreams)) ? $ptStreams[0] : ($blockForeign ? null : $p2p[0]);
+
+                            if ($chosen) {
+                                $magnet = $chosen['magnet'] ?? null;
+                                $infoHash = $chosen['infoHash'] ?? null;
+                            }
+                        }
                     }
                 } catch (\Throwable $e) {
                     // Fallback para url vazia (ficará pending_source)
