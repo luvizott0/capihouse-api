@@ -281,6 +281,208 @@ class QBittorrentService
     }
 
     /**
+     * Retorna a lista de arquivos pertencentes a um torrent.
+     */
+    public function getTorrentFiles(string $hash): array
+    {
+        $hash = strtolower(trim($hash));
+        $sid = $this->getAuthCookie();
+        $client = Http::timeout(5);
+
+        if ($sid) {
+            $client = $client->withCookies(['SID' => $sid], parse_url($this->getBaseUrl(), PHP_URL_HOST));
+        }
+
+        try {
+            $response = $client->get("{$this->getBaseUrl()}/api/v2/torrents/files", [
+                'hash' => $hash,
+            ]);
+
+            if ($response->successful()) {
+                return $response->json() ?? [];
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Erro ao consultar arquivos do torrent {$hash}: ".$e->getMessage());
+        }
+
+        return [];
+    }
+
+    /**
+     * Define a prioridade de um ou mais arquivos dentro de um torrent.
+     * Prioridade: 0 = Não baixar, 1 = Normal, 6 = Alta, 7 = Máxima
+     */
+    public function setFilePriority(string $hash, array $fileIndices, int $priority = 0): bool
+    {
+        if (empty($fileIndices)) {
+            return true;
+        }
+
+        $hash = strtolower(trim($hash));
+        $idParam = implode('|', array_unique($fileIndices));
+
+        return $this->postAction('filePrio', [
+            'hash' => $hash,
+            'id' => $idParam,
+            'priority' => (string) $priority,
+        ]);
+    }
+
+    /**
+     * Configura o download seletivo para baixar apenas os episódios solicitados de uma temporada.
+     * Arquivos que não correspondem aos episódios solicitados recebem prioridade 0 (não baixar).
+     */
+    public function configureSelectiveEpisodes(string $hash, int $season, array $episodesToKeep): bool
+    {
+        $files = $this->getTorrentFiles($hash);
+        if (empty($files)) {
+            return false;
+        }
+
+        $episodesToKeep = array_map('intval', $episodesToKeep);
+        $videoExtensions = ['mp4', 'mkv', 'avi', 'webm', 'm4v', 'mov', 'ts'];
+
+        $toIgnore = [];
+        $toDownload = [];
+        $videoFiles = [];
+
+        foreach ($files as $f) {
+            $idx = $f['index'] ?? null;
+            if ($idx === null) {
+                continue;
+            }
+
+            $name = $f['name'] ?? '';
+            $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+            if (! in_array($ext, $videoExtensions, true)) {
+                $toIgnore[] = $idx;
+
+                continue;
+            }
+
+            $detectedEp = null;
+            $detectedSeason = null;
+
+            if (preg_match('/s0*(\d+)[\.\-_ ]*e0*(\d+)/i', $name, $m)) {
+                $detectedSeason = (int) $m[1];
+                $detectedEp = (int) $m[2];
+            } elseif (preg_match('/0*(\d+)x0*(\d+)/i', $name, $m)) {
+                $detectedSeason = (int) $m[1];
+                $detectedEp = (int) $m[2];
+            } elseif (preg_match('/(?:ep|episode|episodio|e)[\.\-_ ]*0*(\d+)/i', $name, $m)) {
+                $detectedEp = (int) $m[1];
+                $detectedSeason = $season;
+            }
+
+            if ($detectedEp !== null) {
+                if ($detectedSeason === null || $detectedSeason === $season) {
+                    if (in_array($detectedEp, $episodesToKeep, true)) {
+                        $toDownload[] = $idx;
+                    } else {
+                        $toIgnore[] = $idx;
+                    }
+                } else {
+                    $toIgnore[] = $idx;
+                }
+            } else {
+                $videoFiles[] = [
+                    'index' => $idx,
+                    'name' => $name,
+                ];
+            }
+        }
+
+        if (! empty($videoFiles)) {
+            if (count($videoFiles) === 1 && count($files) <= 3) {
+                $singleIdx = $videoFiles[0]['index'];
+                if (! empty($episodesToKeep)) {
+                    $toDownload[] = $singleIdx;
+                } else {
+                    $toIgnore[] = $singleIdx;
+                }
+            } else {
+                usort($videoFiles, fn ($a, $b) => strnatcasecmp($a['name'], $b['name']));
+                foreach ($videoFiles as $order => $vf) {
+                    $seqEp = $order + 1;
+                    if (in_array($seqEp, $episodesToKeep, true)) {
+                        $toDownload[] = $vf['index'];
+                    } else {
+                        $toIgnore[] = $vf['index'];
+                    }
+                }
+            }
+        }
+
+        if (! empty($toIgnore)) {
+            $this->setFilePriority($hash, $toIgnore, 0);
+        }
+
+        if (! empty($toDownload)) {
+            $this->setFilePriority($hash, $toDownload, 1);
+        }
+
+        return true;
+    }
+
+    /**
+     * Localiza o arquivo específico de um episódio dentro do torrent e retorna seus dados.
+     */
+    public function getEpisodeFileStatus(string $hash, int $season, int $episode): ?array
+    {
+        $files = $this->getTorrentFiles($hash);
+        if (empty($files)) {
+            return null;
+        }
+
+        $videoExtensions = ['mp4', 'mkv', 'avi', 'webm', 'm4v', 'mov', 'ts'];
+        $videoFiles = [];
+
+        foreach ($files as $f) {
+            $name = $f['name'] ?? '';
+            $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+            if (! in_array($ext, $videoExtensions, true)) {
+                continue;
+            }
+
+            $detectedEp = null;
+            $detectedSeason = null;
+
+            if (preg_match('/s0*(\d+)[\.\-_ ]*e0*(\d+)/i', $name, $m)) {
+                $detectedSeason = (int) $m[1];
+                $detectedEp = (int) $m[2];
+            } elseif (preg_match('/0*(\d+)x0*(\d+)/i', $name, $m)) {
+                $detectedSeason = (int) $m[1];
+                $detectedEp = (int) $m[2];
+            } elseif (preg_match('/(?:ep|episode|episodio|e)[\.\-_ ]*0*(\d+)/i', $name, $m)) {
+                $detectedEp = (int) $m[1];
+                $detectedSeason = $season;
+            }
+
+            if ($detectedEp !== null) {
+                if (($detectedSeason === null || $detectedSeason === $season) && $detectedEp === $episode) {
+                    return $f;
+                }
+            } else {
+                $videoFiles[] = $f;
+            }
+        }
+
+        if (! empty($videoFiles)) {
+            if (count($videoFiles) === 1 && $episode === 1) {
+                return $videoFiles[0];
+            }
+            usort($videoFiles, fn ($a, $b) => strnatcasecmp($a['name'], $b['name']));
+            $targetIndex = $episode - 1;
+            if (isset($videoFiles[$targetIndex])) {
+                return $videoFiles[$targetIndex];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Executa uma ação de postagem simples na Web API.
      */
     protected function postAction(string $endpoint, array $params): bool

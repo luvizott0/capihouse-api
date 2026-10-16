@@ -79,8 +79,11 @@ class CapyFlixController extends Controller
             'info_hash' => 'nullable|string',
             'expected_bytes' => 'nullable|integer|min:1',
             'preferred_audio' => 'nullable|string|in:dub,sub,any_pt,any',
-            'is_animation' => 'nullable|boolean',
+            'is_animation' => 'nullable',
+            'selected_episodes' => 'nullable|array',
+            'selected_episodes.*' => 'integer|min:1',
         ]);
+        $validated['is_animation'] = filter_var($request->input('is_animation', false), FILTER_VALIDATE_BOOLEAN);
 
         try {
             $task = $this->downloadService->startDownload($validated);
@@ -195,9 +198,12 @@ class CapyFlixController extends Controller
             'magnet' => 'nullable|string',
             'info_hash' => 'nullable|string',
             'preferred_audio' => 'nullable|string|in:dub,sub,any_pt,any',
-            'is_animation' => 'nullable|boolean',
-            'block_foreign' => 'nullable|boolean',
+            'is_animation' => 'nullable',
+            'block_foreign' => 'nullable',
         ]);
+
+        $validated['is_animation'] = filter_var($request->input('is_animation', false), FILTER_VALIDATE_BOOLEAN);
+        $validated['block_foreign'] = filter_var($request->input('block_foreign', true), FILTER_VALIDATE_BOOLEAN);
 
         $result = $this->downloadService->batchDownload($validated);
 
@@ -225,11 +231,15 @@ class CapyFlixController extends Controller
             'token' => 'nullable|string',
             'provider' => 'nullable|string',
             'preferred_audio' => 'nullable|string|in:dub,sub,any_pt,any',
-            'is_animation' => 'nullable|boolean',
+            'is_animation' => 'nullable',
             'genres' => 'nullable|array',
-            'include_p2p' => 'nullable|boolean',
-            'block_foreign' => 'nullable|boolean',
+            'include_p2p' => 'nullable',
+            'block_foreign' => 'nullable',
         ]);
+
+        $validated['is_animation'] = filter_var($request->input('is_animation', false), FILTER_VALIDATE_BOOLEAN);
+        $validated['include_p2p'] = filter_var($request->input('include_p2p', true), FILTER_VALIDATE_BOOLEAN);
+        $validated['block_foreign'] = filter_var($request->input('block_foreign', false), FILTER_VALIDATE_BOOLEAN);
 
         $streams = $this->streamResolverService->resolveStreams($validated);
 

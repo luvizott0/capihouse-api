@@ -44,18 +44,52 @@ class CapyFlixDownloadService
                     $h = strtolower($task['torrent_hash']);
                     if (isset($qbitMap[$h])) {
                         $qt = $qbitMap[$h];
-                        $task['progress'] = $qt['progress'];
-                        $task['downloaded_bytes'] = $qt['downloaded_bytes'];
-                        if ($qt['size_bytes'] > 0) {
-                            $task['total_bytes'] = $qt['size_bytes'];
+
+                        // Configura arquivos seletivos se ainda não estiver configurado
+                        if (($task['media_type'] ?? '') !== 'movie' && ! empty($task['selected_episodes']) && empty($task['files_configured'])) {
+                            $season = (int) ($task['season'] ?? 1);
+                            $configured = $this->qbittorrentService->configureSelectiveEpisodes(
+                                $h,
+                                $season,
+                                $task['selected_episodes']
+                            );
+                            if ($configured) {
+                                $task['files_configured'] = true;
+                                $updated = true;
+                            }
                         }
+
+                        // Sincroniza progresso específico do episódio se disponível
+                        $ep = (int) ($task['episode'] ?? 1);
+                        $season = (int) ($task['season'] ?? 1);
+                        $epFile = $this->qbittorrentService->getEpisodeFileStatus($h, $season, $ep);
+
+                        if ($epFile && isset($epFile['progress'])) {
+                            $epProgress = round($epFile['progress'] * 100, 1);
+                            $task['progress'] = $epProgress;
+                            $task['downloaded_bytes'] = (int) round($epFile['size'] * $epFile['progress']);
+                            if ($epFile['size'] > 0) {
+                                $task['total_bytes'] = (int) $epFile['size'];
+                            }
+
+                            if ($epFile['progress'] >= 1.0) {
+                                $task['status'] = 'completed';
+                                $task['progress'] = 100;
+                            }
+                        } else {
+                            $task['progress'] = $qt['progress'];
+                            $task['downloaded_bytes'] = $qt['downloaded_bytes'];
+                            if ($qt['size_bytes'] > 0) {
+                                $task['total_bytes'] = $qt['size_bytes'];
+                            }
+                            if ($qt['is_completed']) {
+                                $task['status'] = 'completed';
+                                $task['progress'] = 100;
+                            }
+                        }
+
                         $task['dlspeed_formatted'] = $qt['dlspeed_formatted'];
                         $task['num_seeds'] = $qt['num_seeds'];
-
-                        if ($qt['is_completed']) {
-                            $task['status'] = 'completed';
-                            $task['progress'] = 100;
-                        }
                         $updated = true;
                     }
                 }
@@ -177,12 +211,17 @@ class CapyFlixDownloadService
         $targetPath = $targetDir.DIRECTORY_SEPARATOR.$fileName;
         $id = Str::uuid()->toString();
 
+        $selectedEpisodes = $data['selected_episodes'] ?? [$episode];
+        $selectedEpisodes = array_values(array_map('intval', (array) $selectedEpisodes));
+
         $task = [
             'id' => $id,
             'title' => $title,
             'media_type' => $mediaType,
             'season' => $season,
             'episode' => $episode,
+            'selected_episodes' => $selectedEpisodes,
+            'files_configured' => false,
             'file_name' => $fileName,
             'target_path' => $targetPath,
             'url' => $downloadUrl,
@@ -213,10 +252,18 @@ class CapyFlixDownloadService
             if ($this->qbittorrentService->isAvailable()) {
                 $qbitRes = $this->qbittorrentService->addTorrent($magnet, $targetDir, 'capyflix', "{$cleanTitle}-s{$season}e{$episode}");
                 if ($qbitRes['success']) {
+                    $torrentHash = $infoHash ?: $this->extractHashFromMagnet($magnet);
+                    $configured = false;
+                    if ($torrentHash && $mediaType !== 'movie') {
+                        $configured = $this->qbittorrentService->configureSelectiveEpisodes($torrentHash, $season, $selectedEpisodes);
+                    }
+
                     $downloads[$id]['engine'] = 'qbittorrent';
                     $downloads[$id]['status'] = 'downloading';
-                    $downloads[$id]['torrent_hash'] = $infoHash ?: $this->extractHashFromMagnet($magnet);
+                    $downloads[$id]['torrent_hash'] = $torrentHash;
                     $downloads[$id]['magnet'] = $magnet;
+                    $downloads[$id]['selected_episodes'] = $selectedEpisodes;
+                    $downloads[$id]['files_configured'] = $configured;
                     Cache::put('capyflix:active_downloads', $downloads, now()->addDays(2));
 
                     return $downloads[$id];
@@ -224,6 +271,8 @@ class CapyFlixDownloadService
             } else {
                 $downloads[$id]['engine'] = 'qbittorrent';
                 $downloads[$id]['status'] = 'pending_source';
+                $downloads[$id]['selected_episodes'] = $selectedEpisodes;
+                $downloads[$id]['files_configured'] = false;
                 $downloads[$id]['error'] = 'qBittorrent não detectado na porta 8085. Inicie o container qBittorrent para baixar via P2P.';
                 Cache::put('capyflix:active_downloads', $downloads, now()->addDays(2));
 
@@ -518,6 +567,7 @@ class CapyFlixDownloadService
                     'media_type' => $mediaType,
                     'season' => $season,
                     'episode' => $ep,
+                    'selected_episodes' => array_values(array_map('intval', $episodes)),
                     'url' => $url ?: '',
                     'magnet' => $magnet,
                     'info_hash' => $infoHash,

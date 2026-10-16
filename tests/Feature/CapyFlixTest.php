@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\CapyFlixStorageService;
 use App\Services\CapyFlixStreamResolverService;
+use App\Services\QBittorrentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -221,5 +222,44 @@ class CapyFlixTest extends TestCase
         $this->assertTrue($legResult['preference_matched']);
         $this->assertStringContainsString('LEG PT-BR', $legResult['badge']);
         $this->assertGreaterThan($dubOnlyResult['score'], $legResult['score']);
+    }
+
+    public function test_resolve_streams_accepts_boolean_query_params_without_validation_error(): void
+    {
+        // When frontend passes string booleans 'true' or 'false', controller must not return 422
+        $response = $this->getJson('/api/capyflix/resolve-streams?title=Hotel+Assombrado&media_type=series&season=1&episode=1&is_animation=true&include_p2p=true&block_foreign=false');
+
+        $this->assertNotEquals(422, $response->status());
+        $response->assertStatus(200)
+            ->assertJsonStructure(['streams', 'debrid_configured']);
+    }
+
+    public function test_qbittorrent_selective_episodes_logic(): void
+    {
+        Http::fake([
+            '*/api/v2/torrents/files*' => Http::response([
+                ['index' => 0, 'name' => 'Haunted.Hotel.S01E01.1080p.mkv', 'size' => 500000000, 'priority' => 1, 'progress' => 0.5],
+                ['index' => 1, 'name' => 'Haunted.Hotel.S01E02.1080p.mkv', 'size' => 500000000, 'priority' => 1, 'progress' => 0.0],
+                ['index' => 2, 'name' => 'sample.mkv', 'size' => 5000000, 'priority' => 1, 'progress' => 0.0],
+            ], 200),
+            '*/api/v2/torrents/filePrio' => Http::response('Ok.', 200),
+            '*/api/v2/auth/login' => Http::response('Ok.', 200),
+        ]);
+
+        $qbit = app(QBittorrentService::class);
+
+        // Keep only episode 1, ignore episode 2 and sample
+        $configured = $qbit->configureSelectiveEpisodes('test_hash', 1, [1]);
+        $this->assertTrue($configured);
+
+        // Verify episode status lookup
+        $ep1 = $qbit->getEpisodeFileStatus('test_hash', 1, 1);
+        $this->assertNotNull($ep1);
+        $this->assertEquals(0, $ep1['index']);
+        $this->assertEquals(0.5, $ep1['progress']);
+
+        $ep2 = $qbit->getEpisodeFileStatus('test_hash', 1, 2);
+        $this->assertNotNull($ep2);
+        $this->assertEquals(1, $ep2['index']);
     }
 }
