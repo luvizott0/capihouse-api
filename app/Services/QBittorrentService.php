@@ -127,7 +127,12 @@ class QBittorrentService
         try {
             $response = $client->asForm()->post("{$this->getBaseUrl()}/api/v2/torrents/add", $params);
 
-            if ($response->successful() && trim($response->body()) === 'Ok.') {
+            $body = trim($response->body());
+            $isSuccess = ($response->successful() && ($body === 'Ok.' || empty($body)))
+                || $response->status() === 409
+                || str_contains($body, 'Conflict');
+
+            if ($isSuccess) {
                 return [
                     'success' => true,
                     'message' => 'Torrent adicionado com sucesso ao qBittorrent.',
@@ -144,9 +149,14 @@ class QBittorrentService
                         ->asForm()
                         ->post("{$this->getBaseUrl()}/api/v2/torrents/add", $params);
 
+                    $retryBody = trim($retry->body());
+                    $retrySuccess = ($retry->successful() && ($retryBody === 'Ok.' || empty($retryBody)))
+                        || $retry->status() === 409
+                        || str_contains($retryBody, 'Conflict');
+
                     return [
-                        'success' => $retry->successful() && trim($retry->body()) === 'Ok.',
-                        'message' => $retry->body(),
+                        'success' => $retrySuccess,
+                        'message' => $retryBody,
                     ];
                 }
             }
