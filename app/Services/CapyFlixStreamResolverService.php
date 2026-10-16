@@ -263,7 +263,13 @@ class CapyFlixStreamResolverService
         $isAnimation = in_array($mediaType, ['anime', 'cartoon']);
 
         $hasDub = (bool) preg_match('/(?:dublado|dub\b|dual|pt-br|ptbr|portugu[eê]s|nacional|brazilian|🇧🇷)/i', $lower);
-        $hasSub = (bool) preg_match('/(?:legendado|leg\b|sub\b|subbed|legendas|pt-br\s*sub)/i', $lower);
+
+        // Evita falsos positivos como "Rus Sub", "Ita Sub", "Fre Sub" serem considerados legendas em português
+        $isForeignSubOnly = (bool) preg_match('/(?:rus|russian|ita|italian|fre|french|ger|german|spa|spanish|kor|chi|polish|pol)\s*sub/i', $lower);
+        $hasPtSub = (bool) preg_match('/(?:legendado|leg\s*pt|sub\s*pt|legendas?(?:\s+em)?\s+pt|pt-br\s*sub|sub\s*pt-br|pob\b)/i', $lower);
+        $hasGenericSub = ((bool) preg_match('/(?:legendado|leg\b|subbed|legendas)/i', $lower)) && ! $isForeignSubOnly;
+        $hasSub = $hasPtSub || $hasGenericSub;
+
         $hasOriginal = (bool) preg_match('/(?:original|eng|english|multi|dual|jap|japanese|bluray|web-dl|hevc|x265|1080p|720p)/i', $lower);
 
         $badge = 'P2P TORRENT';
@@ -284,17 +290,24 @@ class CapyFlixStreamResolverService
             }
         } else {
             // Regra 2: Filmes e Séries -> Preferência por ÁUDIO ORIGINAL com legendas em português (ou Dual)
-            if ($hasOriginal && ($hasSub || preg_match('/(?:dual|multi|pt-br)/i', $lower))) {
+            if ($hasOriginal && ($hasPtSub || preg_match('/(?:dual|pt-br|brazilian)/i', $lower))) {
                 $score += 1000;
                 $badge = 'ORIGINAL • LEG PT-BR ★';
                 $prefMatch = true;
-            } elseif ($hasSub) {
-                $score += 800;
-                $badge = 'ORIGINAL LEGENDADO';
+            } elseif ($hasPtSub) {
+                $score += 850;
+                $badge = 'ORIGINAL LEG PT-BR';
                 $prefMatch = true;
-            } elseif (preg_match('/(?:dual|multi)/i', $lower)) {
-                $score += 700;
-                $badge = 'DUAL / MULTI ÁUDIO';
+            } elseif (preg_match('/(?:dual|pt-br)/i', $lower)) {
+                $score += 750;
+                $badge = 'DUAL ÁUDIO PT-BR';
+                $prefMatch = true;
+            } elseif (str_contains($lower, 'multi')) {
+                $score += 450;
+                $badge = 'MULTI ÁUDIO';
+            } elseif ($hasGenericSub) {
+                $score += 450;
+                $badge = 'ORIGINAL LEGENDADO';
                 $prefMatch = true;
             } elseif ($hasDub) {
                 // Dublado puro tem menor pontuação para filmes/séries pois a preferência é áudio original
@@ -359,19 +372,39 @@ class CapyFlixStreamResolverService
                         continue;
                     }
 
-                    $titleLines = explode("\n", $s['title'] ?? '');
+                    $rawTitle = $s['title'] ?? '';
+                    $titleLines = explode("\n", $rawTitle);
                     $cleanTitle = $titleLines[0] ?? 'HD Stream';
-                    $stats = $titleLines[1] ?? ($titleLines[0] ?? '');
+
+                    // Encontra a linha de estatísticas (seeds, tamanho)
+                    $stats = '';
+                    foreach ($titleLines as $line) {
+                        if (str_contains($line, '👤') || str_contains($line, '💾') || str_contains($line, '⚙️')) {
+                            $stats = $line;
+                            break;
+                        }
+                    }
+                    if (empty($stats)) {
+                        $stats = $titleLines[1] ?? ($titleLines[0] ?? '');
+                    }
+
+                    // Extração de seeds do título inteiro
+                    $seeds = 0;
+                    if (preg_match('/👤\s*(\d+)/u', $rawTitle, $mSeed)) {
+                        $seeds = (int) $mSeed[1];
+                    }
 
                     // Avaliação de preferência (Dublado para animações / Áudio Original + Legendas para filmes e séries)
-                    $eval = $this->evaluateTorrentPreference($s['title'] ?? '', $mediaType);
+                    $eval = $this->evaluateTorrentPreference($rawTitle, $mediaType);
                     $score = $eval['score'];
 
-                    // Bônus de seeds
-                    $seeds = 0;
-                    if (preg_match('/👤\s*(\d+)/u', $stats, $mSeed)) {
-                        $seeds = (int) $mSeed[1];
-                        $score += min($seeds, 100) * 2;
+                    // Ponderação crucial de Seeds:
+                    // Torrents com 0 seeds são severamente penalizados (evita torrents mortos congelados)
+                    if ($seeds === 0) {
+                        $score -= 3000;
+                    } else {
+                        // Bônus significativo por seeds ativos (até 1500 pts adicionais)
+                        $score += min($seeds, 100) * 15;
                     }
 
                     $dnName = $mediaTitle ? "{$mediaTitle} - {$cleanTitle}" : $cleanTitle;

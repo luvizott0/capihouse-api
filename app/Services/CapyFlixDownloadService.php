@@ -66,8 +66,8 @@ class CapyFlixDownloadService
             }
         }
 
-        // Auto-heal: se houver tarefas em 'pending_source' e o qBittorrent estiver disponível, tenta resolver a fonte
-        if ($this->qbittorrentService->isAvailable()) {
+        // Auto-heal com throttle (máximo 1 execução a cada 60s para não bloquear requisições de polling)
+        if ($this->qbittorrentService->isAvailable() && Cache::add('capyflix:auto_heal_lock', true, 60)) {
             $healUpdated = false;
             foreach ($downloads as $id => &$task) {
                 if (($task['status'] ?? '') === 'pending_source' && empty($task['magnet']) && empty($task['url'])) {
