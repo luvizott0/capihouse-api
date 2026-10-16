@@ -93,6 +93,103 @@ class CapyFlixStorageService
     }
 
     /**
+     * Extensões de vídeo suportadas para reprodução no player.
+     */
+    protected const VIDEO_EXTENSIONS = ['mp4', 'mkv', 'webm', 'm4v', 'avi', 'mov', 'ts'];
+
+    /**
+     * Varre recursivamente um diretório procurando arquivos de vídeo (até $maxDepth níveis).
+     *
+     * @return string[]
+     */
+    protected function findVideoFiles(string $dir, int $maxDepth = 2): array
+    {
+        if (! is_dir($dir)) {
+            return [];
+        }
+
+        $results = [];
+        $items = @scandir($dir) ?: [];
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $fullPath = $dir.DIRECTORY_SEPARATOR.$item;
+            if (is_file($fullPath)) {
+                $ext = strtolower(pathinfo($item, PATHINFO_EXTENSION));
+                if (in_array($ext, self::VIDEO_EXTENSIONS, true)) {
+                    $results[] = $fullPath;
+                }
+            } elseif (is_dir($fullPath) && $maxDepth > 0) {
+                $sub = $this->findVideoFiles($fullPath, $maxDepth - 1);
+                $results = array_merge($results, $sub);
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Localiza todas as pastas candidatas da temporada de uma série (suporta subpastas e variações).
+     *
+     * @return string[]
+     */
+    protected function resolveSeasonDirectories(string $mediaRoot, string $cleanTitle, int $season): array
+    {
+        $seriesBase = $mediaRoot.DIRECTORY_SEPARATOR.'séries';
+        if (! is_dir($seriesBase)) {
+            return [];
+        }
+
+        $seriesDirs = [];
+        $directSeriesDir = $seriesBase.DIRECTORY_SEPARATOR.$cleanTitle;
+        if (is_dir($directSeriesDir)) {
+            $seriesDirs[] = $directSeriesDir;
+        }
+
+        // Busca flexível por diretório da série (ex: "Hotel Assombrado" vs "Haunted Hotel")
+        $allEntries = @scandir($seriesBase) ?: [];
+        foreach ($allEntries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $fullPath = $seriesBase.DIRECTORY_SEPARATOR.$entry;
+            if (! is_dir($fullPath)) {
+                continue;
+            }
+            if (
+                stripos($entry, $cleanTitle) !== false ||
+                stripos($cleanTitle, $entry) !== false ||
+                str_replace([' ', '-', '_', '.'], '', strtolower($entry)) === str_replace([' ', '-', '_', '.'], '', strtolower($cleanTitle))
+            ) {
+                if (! in_array($fullPath, $seriesDirs, true)) {
+                    $seriesDirs[] = $fullPath;
+                }
+            }
+        }
+
+        $seasonDirs = [];
+        foreach ($seriesDirs as $sDir) {
+            $candidates = [
+                $sDir.DIRECTORY_SEPARATOR."Temporada {$season}",
+                $sDir.DIRECTORY_SEPARATOR."Temporada 0{$season}",
+                $sDir.DIRECTORY_SEPARATOR."Season {$season}",
+                $sDir.DIRECTORY_SEPARATOR."Season 0{$season}",
+                $sDir.DIRECTORY_SEPARATOR."Livro {$season}",
+                $sDir.DIRECTORY_SEPARATOR."S{$season}",
+                $sDir,
+            ];
+            foreach ($candidates as $cand) {
+                if (is_dir($cand) && ! in_array($cand, $seasonDirs, true)) {
+                    $seasonDirs[] = $cand;
+                }
+            }
+        }
+
+        return $seasonDirs;
+    }
+
+    /**
      * Localiza a URL de streaming local (/local-media/...) se o arquivo já existir no NAS.
      */
     public function findLocalMediaUrl(string $mediaType, string $title, int $season = 1, int $episode = 1): ?string
@@ -103,26 +200,34 @@ class CapyFlixStorageService
 
         if ($mediaType === 'movie') {
             $targetDir = $mediaRoot.DIRECTORY_SEPARATOR.'filmes';
-            $fileName = "{$cleanTitle}.mp4";
-            $fullPath = $targetDir.DIRECTORY_SEPARATOR.$fileName;
-            if (file_exists($fullPath)) {
-                return '/local-media/filmes/'.rawurlencode($fileName);
+            if (is_dir($targetDir)) {
+                $videoFiles = $this->findVideoFiles($targetDir, 2);
+                foreach ($videoFiles as $vf) {
+                    $fn = pathinfo($vf, PATHINFO_FILENAME);
+                    if (
+                        stripos($fn, $cleanTitle) !== false ||
+                        str_replace([' ', '-', '_', '.'], '', strtolower($fn)) === str_replace([' ', '-', '_', '.'], '', strtolower($cleanTitle))
+                    ) {
+                        $rel = ltrim(str_replace([$mediaRoot, '\\'], ['', '/'], $vf), '/');
+
+                        return '/local-media/'.implode('/', array_map('rawurlencode', explode('/', $rel)));
+                    }
+                }
             }
         } else {
-            $epFormatted = str_pad($episode, 2, '0', STR_PAD_LEFT);
-            $targetDir = $mediaRoot.DIRECTORY_SEPARATOR.'séries'.DIRECTORY_SEPARATOR.$cleanTitle.DIRECTORY_SEPARATOR."Temporada {$season}";
-            $fileName = "{$season}x{$epFormatted} - {$cleanTitle}.mp4";
-            $fullPath = $targetDir.DIRECTORY_SEPARATOR.$fileName;
-            if (file_exists($fullPath)) {
-                return '/local-media/s%C3%A9ries/'.rawurlencode($cleanTitle).'/Temporada%20'.$season.'/'.rawurlencode($fileName);
-            }
+            $seasonDirs = $this->resolveSeasonDirectories($mediaRoot, $cleanTitle, $season);
 
-            // Fallback: busca por prefixo do episódio na pasta da temporada
-            if (is_dir($targetDir)) {
-                $files = @scandir($targetDir) ?: [];
-                foreach ($files as $f) {
-                    if (str_starts_with($f, "{$season}x{$epFormatted}") || str_starts_with($f, "S{$season}E{$epFormatted}")) {
-                        return '/local-media/s%C3%A9ries/'.rawurlencode($cleanTitle).'/Temporada%20'.$season.'/'.rawurlencode($f);
+            $pattern = '/(?:^|[\s\.\-_\[\(])(?:S?0*'.preg_quote((string) $season, '/').'[xE]|E|Ep|Episode|Episodio)0*'.preg_quote((string) $episode, '/').'(?:[\s\.\-_\]\)]|$)/i';
+            $numPattern = '/^0*'.preg_quote((string) $episode, '/').'\.(?:'.implode('|', self::VIDEO_EXTENSIONS).')$/i';
+
+            foreach ($seasonDirs as $sDir) {
+                $videoFiles = $this->findVideoFiles($sDir, 2);
+                foreach ($videoFiles as $vf) {
+                    $fn = basename($vf);
+                    if (preg_match($pattern, $fn) || preg_match($numPattern, $fn)) {
+                        $rel = ltrim(str_replace([$mediaRoot, '\\'], ['', '/'], $vf), '/');
+
+                        return '/local-media/'.implode('/', array_map('rawurlencode', explode('/', $rel)));
                     }
                 }
             }
@@ -145,21 +250,26 @@ class CapyFlixStorageService
         $mediaRoot = $this->getMediaRoot();
         $cleanTitle = preg_replace('/[^\w\s\-\.\(\)]/u', '', $title);
         $cleanTitle = trim(preg_replace('/\s+/', ' ', $cleanTitle));
-        $targetDir = $mediaRoot.DIRECTORY_SEPARATOR.'séries'.DIRECTORY_SEPARATOR.$cleanTitle.DIRECTORY_SEPARATOR."Temporada {$season}";
 
+        $seasonDirs = $this->resolveSeasonDirectories($mediaRoot, $cleanTitle, $season);
         $downloaded = [];
-        if (is_dir($targetDir)) {
-            $files = @scandir($targetDir) ?: [];
-            foreach ($files as $f) {
-                if ($f === '.' || $f === '..') {
-                    continue;
-                }
-                // Identifica padrões como "1x02", "01x02", "S01E02", "S1E2", "E02", etc.
-                if (preg_match('/(?:^|[\s\.\-_])(?:S?0*'.preg_quote((string) $season, '/').'[xE]|E)0*(\d+)/i', $f, $m)) {
+
+        $pattern = '/(?:^|[\s\.\-_\[\(])(?:S?0*'.preg_quote((string) $season, '/').'[xE]|E|Ep|Episode|Episodio)0*(\d+)(?:[\s\.\-_\]\)]|$)/i';
+        $numPattern = '/^0*(\d+)\.(?:'.implode('|', self::VIDEO_EXTENSIONS).')$/i';
+
+        foreach ($seasonDirs as $sDir) {
+            $videoFiles = $this->findVideoFiles($sDir, 2);
+            foreach ($videoFiles as $vf) {
+                $fn = basename($vf);
+                if (preg_match($pattern, $fn, $m)) {
+                    $downloaded[] = (int) $m[1];
+                } elseif (preg_match($numPattern, $fn, $m)) {
                     $downloaded[] = (int) $m[1];
                 }
             }
         }
+
+        sort($downloaded);
 
         return array_values(array_unique($downloaded));
     }
