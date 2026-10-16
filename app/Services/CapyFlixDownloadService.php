@@ -66,6 +66,52 @@ class CapyFlixDownloadService
             }
         }
 
+        // Auto-heal: se houver tarefas em 'pending_source' e o qBittorrent estiver disponível, tenta resolver a fonte
+        if ($this->qbittorrentService->isAvailable()) {
+            $healUpdated = false;
+            foreach ($downloads as $id => &$task) {
+                if (($task['status'] ?? '') === 'pending_source' && empty($task['magnet']) && empty($task['url'])) {
+                    try {
+                        $streams = $this->streamResolverService->resolveStreams([
+                            'title' => $task['title'] ?? '',
+                            'media_type' => $task['media_type'] ?? 'movie',
+                            'season' => (int) ($task['season'] ?? 1),
+                            'episode' => (int) ($task['episode'] ?? 1),
+                        ]);
+
+                        if (! empty($streams)) {
+                            $top = $streams[0];
+                            $mag = $top['magnet'] ?? null;
+                            $hash = $top['infoHash'] ?? null;
+
+                            if ($mag) {
+                                $cleanTitle = Str::slug($task['title'] ?? 'media');
+                                $season = (int) ($task['season'] ?? 1);
+                                $ep = (int) ($task['episode'] ?? 1);
+                                $targetDir = dirname($task['target_path']);
+
+                                $addRes = $this->qbittorrentService->addTorrent($mag, $targetDir, 'capyflix', "{$cleanTitle}-s{$season}e{$ep}");
+                                if ($addRes['success']) {
+                                    $task['engine'] = 'qbittorrent';
+                                    $task['status'] = 'downloading';
+                                    $task['magnet'] = $mag;
+                                    $task['torrent_hash'] = $hash ?: $this->extractHashFromMagnet($mag);
+                                    $task['error'] = null;
+                                    $healUpdated = true;
+                                }
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        // mantém pending_source
+                    }
+                }
+            }
+
+            if ($healUpdated) {
+                Cache::put('capyflix:active_downloads', $downloads, now()->addDays(2));
+            }
+        }
+
         return $downloads;
     }
 
@@ -90,16 +136,19 @@ class CapyFlixDownloadService
 
         // 2. Validar se já existe na fila ou baixando
         $downloads = $this->getDownloads();
-        foreach ($downloads as $dl) {
+        foreach ($downloads as $dlKey => $dl) {
             if (
                 ($dl['title'] ?? '') === $title &&
                 ($dl['media_type'] ?? '') === $mediaType &&
                 (int) ($dl['season'] ?? 1) === $season &&
-                (int) ($dl['episode'] ?? 1) === $episode &&
-                in_array($dl['status'] ?? '', ['queued', 'downloading', 'pending_source'])
+                (int) ($dl['episode'] ?? 1) === $episode
             ) {
-                $label = $mediaType === 'movie' ? 'Este filme' : "O episódio {$season}x".str_pad((string) $episode, 2, '0', STR_PAD_LEFT);
-                throw new \RuntimeException("{$label} já está na fila de downloads ou sendo baixado.");
+                if (in_array($dl['status'] ?? '', ['queued', 'downloading'])) {
+                    $label = $mediaType === 'movie' ? 'Este filme' : "O episódio {$season}x".str_pad((string) $episode, 2, '0', STR_PAD_LEFT);
+                    throw new \RuntimeException("{$label} já está na fila de downloads ou sendo baixado.");
+                }
+                // Se estava como pending_source ou failed, substitui o anterior
+                unset($downloads[$dlKey]);
             }
         }
 
@@ -394,7 +443,7 @@ class CapyFlixDownloadService
                     ($dl['media_type'] ?? '') === $mediaType &&
                     (int) ($dl['season'] ?? 1) === $season &&
                     (int) ($dl['episode'] ?? 1) === $ep &&
-                    in_array($dl['status'] ?? '', ['queued', 'downloading', 'pending_source'])
+                    in_array($dl['status'] ?? '', ['queued', 'downloading'])
                 ) {
                     $active = true;
                     break;

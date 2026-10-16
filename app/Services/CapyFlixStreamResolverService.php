@@ -78,6 +78,10 @@ class CapyFlixStreamResolverService
             $imdbId = $this->getImdbIdFromTmdb((int) $tmdbId, $mediaType);
         }
 
+        if (empty($imdbId) && ! empty($title)) {
+            $imdbId = $this->searchImdbIdByTitle((string) $title, $mediaType);
+        }
+
         if (empty($imdbId)) {
             return $streams;
         }
@@ -93,6 +97,62 @@ class CapyFlixStreamResolverService
         }
 
         return $streams;
+    }
+
+    /**
+     * Busca o IMDb ID no TMDB através do título da mídia (filme ou série).
+     */
+    public function searchImdbIdByTitle(string $title, string $mediaType): ?string
+    {
+        $cleanTitle = trim($title);
+        if (empty($cleanTitle)) {
+            return null;
+        }
+
+        $cacheKey = 'capyflix:imdb_search:'.md5("{$mediaType}:{$cleanTitle}");
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
+
+        try {
+            $endpoint = ($mediaType === 'movie') ? 'search/movie' : 'search/tv';
+            $response = Http::timeout(5)->get("https://api.themoviedb.org/3/{$endpoint}", [
+                'api_key' => self::TMDB_API_KEY,
+                'query' => $cleanTitle,
+            ]);
+
+            if ($response->successful()) {
+                $results = $response->json('results') ?? [];
+                if (! empty($results)) {
+                    $matchedId = null;
+                    foreach ($results as $r) {
+                        $name = $r['name'] ?? ($r['title'] ?? '');
+                        $origName = $r['original_name'] ?? ($r['original_title'] ?? '');
+                        if (strcasecmp($name, $cleanTitle) === 0 || strcasecmp($origName, $cleanTitle) === 0) {
+                            $matchedId = (int) ($r['id'] ?? 0);
+                            break;
+                        }
+                    }
+
+                    if (! $matchedId) {
+                        $matchedId = (int) ($results[0]['id'] ?? 0);
+                    }
+
+                    if ($matchedId > 0) {
+                        $imdbId = $this->getImdbIdFromTmdb($matchedId, $mediaType);
+                        if (! empty($imdbId)) {
+                            Cache::put($cacheKey, $imdbId, now()->addDays(30));
+
+                            return $imdbId;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Falha ao buscar IMDb ID para título '{$title}': ".$e->getMessage());
+        }
+
+        return null;
     }
 
     /**
