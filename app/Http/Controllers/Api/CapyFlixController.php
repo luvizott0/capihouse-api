@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\CapyFlixDownloadService;
 use App\Services\CapyFlixStorageService;
 use App\Services\CapyFlixStreamResolverService;
+use App\Services\QBittorrentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,7 +15,8 @@ class CapyFlixController extends Controller
     public function __construct(
         protected CapyFlixStorageService $storageService,
         protected CapyFlixDownloadService $downloadService,
-        protected CapyFlixStreamResolverService $streamResolverService
+        protected CapyFlixStreamResolverService $streamResolverService,
+        protected QBittorrentService $qbittorrentService
     ) {}
 
     /**
@@ -102,6 +104,100 @@ class CapyFlixController extends Controller
         return response()->json([
             'success' => $cancelled,
             'message' => $cancelled ? 'Download cancelado.' : 'Tarefa não encontrada.',
+        ]);
+    }
+
+    /**
+     * Consulta o status de download de um filme ou temporada (episódios baixados no disco e na fila).
+     */
+    public function mediaStatus(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'title' => 'required|string',
+            'media_type' => 'required|in:movie,series,anime,cartoon',
+            'season' => 'nullable|integer|min:1',
+        ]);
+
+        $title = $validated['title'];
+        $mediaType = $validated['media_type'];
+        $season = (int) ($validated['season'] ?? 1);
+
+        $downloadedEpisodes = $this->storageService->getSeasonDownloadedEpisodes($mediaType, $title, $season);
+        $isDownloaded = $mediaType === 'movie'
+            ? $this->storageService->isMediaDownloaded($mediaType, $title)
+            : count($downloadedEpisodes) > 0;
+
+        $active = [];
+        foreach ($this->downloadService->getDownloads() as $dl) {
+            if (
+                ($dl['title'] ?? '') === $title &&
+                ($dl['media_type'] ?? '') === $mediaType &&
+                (int) ($dl['season'] ?? 1) === $season &&
+                in_array($dl['status'] ?? '', ['queued', 'downloading', 'pending_source'])
+            ) {
+                $active[] = [
+                    'id' => $dl['id'],
+                    'season' => (int) ($dl['season'] ?? 1),
+                    'episode' => (int) ($dl['episode'] ?? 1),
+                    'status' => $dl['status'],
+                    'progress' => (int) ($dl['progress'] ?? 0),
+                ];
+            }
+        }
+
+        return response()->json([
+            'title' => $title,
+            'media_type' => $mediaType,
+            'season' => $season,
+            'is_downloaded' => $isDownloaded,
+            'downloaded_episodes' => $downloadedEpisodes,
+            'active_downloads' => $active,
+            'debrid_configured' => $this->streamResolverService->getDebridConfig()['has_token'],
+            'qbittorrent_available' => $this->qbittorrentService->isAvailable(),
+        ]);
+    }
+
+    /**
+     * Retorna o status de conexão com o cliente qBittorrent local.
+     */
+    public function qbittorrentStatus(): JsonResponse
+    {
+        $available = $this->qbittorrentService->isAvailable();
+
+        return response()->json([
+            'enabled' => filter_var(env('QBITTORRENT_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+            'available' => $available,
+            'version' => $available ? $this->qbittorrentService->getVersion() : null,
+            'host' => env('QBITTORRENT_HOST', '127.0.0.1'),
+            'port' => (int) env('QBITTORRENT_PORT', 8085),
+            'base_url' => $this->qbittorrentService->getBaseUrl(),
+        ]);
+    }
+
+    /**
+     * Inicia download em lote (múltiplos episódios ou temporada inteira) bloqueando duplicados.
+     */
+    public function batchDownload(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'title' => 'required|string',
+            'media_type' => 'required|in:movie,series,anime,cartoon',
+            'season' => 'nullable|integer|min:1',
+            'episodes' => 'nullable|array',
+            'episodes.*' => 'integer|min:1',
+            'tmdb_id' => 'nullable|integer',
+            'imdb_id' => 'nullable|string',
+            'url' => 'nullable|string',
+        ]);
+
+        $result = $this->downloadService->batchDownload($validated);
+
+        return response()->json([
+            'success' => $result['success'] || $result['skipped_count'] > 0,
+            'result' => $result,
+            'message' => count($result['queued']) > 0
+                ? count($result['queued']).' download(s) iniciado(s) para o NAS.'
+                : 'Nenhum novo download necessário (itens já baixados ou na fila).',
         ]);
     }
 

@@ -89,7 +89,7 @@ class CapyFlixStreamResolverService
 
         // 2. Se não tiver streams diretos ou não tiver token, consulta índices abertos para permitir "Baixar no NAS"
         if (empty($streams)) {
-            $streams = $this->fetchPublicTorrentioStreams($imdbId, $mediaType, $season, $episode);
+            $streams = $this->fetchPublicTorrentioStreams($imdbId, $mediaType, $season, $episode, $title);
         }
 
         return $streams;
@@ -192,16 +192,99 @@ class CapyFlixStreamResolverService
     }
 
     /**
-     * Consulta torrents abertos do Torrentio para listar fontes com suporte a "Baixar no NAS".
+     * Avalia e pontua um título de torrent de acordo com a preferência do usuário:
+     * - Animações / Desenhos / Animes: preferência por ÁUDIO DUBLADO (PT-BR).
+     * - Filmes e Séries: preferência por ÁUDIO ORIGINAL com legendas em português (ou Dual).
+     */
+    public function evaluateTorrentPreference(string $rawTitle, string $mediaType): array
+    {
+        $lower = mb_strtolower($rawTitle, 'UTF-8');
+        $score = 0;
+        $isAnimation = in_array($mediaType, ['anime', 'cartoon']);
+
+        $hasDub = (bool) preg_match('/(?:dublado|dub\b|dual|pt-br|ptbr|portugu[eê]s|nacional|brazilian|🇧🇷)/i', $lower);
+        $hasSub = (bool) preg_match('/(?:legendado|leg\b|sub\b|subbed|legendas|pt-br\s*sub)/i', $lower);
+        $hasOriginal = (bool) preg_match('/(?:original|eng|english|multi|dual|jap|japanese|bluray|web-dl|hevc|x265|1080p|720p)/i', $lower);
+
+        $badge = 'P2P TORRENT';
+        $prefMatch = false;
+
+        if ($isAnimation) {
+            // Regra 1: Animações clássicas -> Preferência por DUBLADO
+            if ($hasDub) {
+                $score += 1000;
+                $badge = '🇧🇷 DUB PT-BR ★';
+                $prefMatch = true;
+            } elseif ($hasSub) {
+                $score += 300;
+                $badge = 'LEGENDADO';
+            } else {
+                $score += 100;
+                $badge = 'ÁUDIO ORIGINAL';
+            }
+        } else {
+            // Regra 2: Filmes e Séries -> Preferência por ÁUDIO ORIGINAL com legendas em português (ou Dual)
+            if ($hasOriginal && ($hasSub || preg_match('/(?:dual|multi|pt-br)/i', $lower))) {
+                $score += 1000;
+                $badge = 'ORIGINAL • LEG PT-BR ★';
+                $prefMatch = true;
+            } elseif ($hasSub) {
+                $score += 800;
+                $badge = 'ORIGINAL LEGENDADO';
+                $prefMatch = true;
+            } elseif (preg_match('/(?:dual|multi)/i', $lower)) {
+                $score += 700;
+                $badge = 'DUAL / MULTI ÁUDIO';
+                $prefMatch = true;
+            } elseif ($hasDub) {
+                // Dublado puro tem menor pontuação para filmes/séries pois a preferência é áudio original
+                $score += 200;
+                $badge = 'DUBLADO';
+            } else {
+                $score += 400;
+                $badge = 'ÁUDIO ORIGINAL HD';
+            }
+        }
+
+        // Resolução e qualidade
+        if (str_contains($lower, '1080p')) {
+            $score += 150;
+        } elseif (str_contains($lower, '720p')) {
+            $score += 80;
+        } elseif (str_contains($lower, '2160p') || str_contains($lower, '4k')) {
+            $score += 50;
+        }
+
+        return [
+            'score' => $score,
+            'badge' => $badge,
+            'preference_matched' => $prefMatch,
+            'is_dubbed' => $hasDub,
+            'is_subbed' => $hasSub,
+        ];
+    }
+
+    /**
+     * Consulta torrents abertos do Torrentio, pontua de acordo com preferências e cria magnet links.
      */
     protected function fetchPublicTorrentioStreams(
         string $imdbId,
         string $mediaType,
         int $season,
-        int $episode
+        int $episode,
+        ?string $mediaTitle = null
     ): array {
         $streams = [];
         $queryPath = $mediaType === 'movie' ? "movie/{$imdbId}.json" : "series/{$imdbId}:{$season}:{$episode}.json";
+
+        $trackers = [
+            'udp://tracker.opentrackr.org:1337/announce',
+            'udp://open.stealth.si:80/announce',
+            'udp://tracker.torrent.eu.org:451/announce',
+            'udp://tracker.openbittorrent.com:6969/announce',
+            'udp://exodus.desync.com:6969/announce',
+        ];
+        $trParams = implode('', array_map(fn ($tr) => '&tr='.rawurlencode($tr), $trackers));
 
         try {
             $url = "https://torrentio.strem.fun/stream/{$queryPath}";
@@ -209,30 +292,53 @@ class CapyFlixStreamResolverService
 
             if ($response->successful()) {
                 $rawStreams = $response->json('streams') ?? [];
-                // Pega os 5 melhores por seeds
-                $count = 0;
+
                 foreach ($rawStreams as $idx => $s) {
-                    if ($count >= 5) {
-                        break;
+                    $infoHash = $s['infoHash'] ?? null;
+                    if (empty($infoHash)) {
+                        continue;
                     }
 
                     $titleLines = explode("\n", $s['title'] ?? '');
                     $cleanTitle = $titleLines[0] ?? 'HD Stream';
-                    $stats = $titleLines[1] ?? '';
+                    $stats = $titleLines[1] ?? ($titleLines[0] ?? '');
+
+                    // Avaliação de preferência (Dublado para animações / Áudio Original + Legendas para filmes e séries)
+                    $eval = $this->evaluateTorrentPreference($s['title'] ?? '', $mediaType);
+                    $score = $eval['score'];
+
+                    // Bônus de seeds
+                    $seeds = 0;
+                    if (preg_match('/👤\s*(\d+)/u', $stats, $mSeed)) {
+                        $seeds = (int) $mSeed[1];
+                        $score += min($seeds, 100) * 2;
+                    }
+
+                    $dnName = $mediaTitle ? "{$mediaTitle} - {$cleanTitle}" : $cleanTitle;
+                    $magnet = "magnet:?xt=urn:btih:{$infoHash}&dn=".rawurlencode($dnName).$trParams;
 
                     $streams[] = [
                         'id' => "torrentio-{$idx}",
-                        'name' => 'Acervo P2P / Web',
+                        'name' => 'qBittorrent (P2P Local)',
                         'title' => "{$cleanTitle} ({$stats})",
-                        'infoHash' => $s['infoHash'] ?? null,
+                        'infoHash' => strtolower($infoHash),
+                        'magnet' => $magnet,
                         'fileIdx' => $s['fileIdx'] ?? 0,
                         'url' => ! empty($s['url']) ? $s['url'] : '',
-                        'badge' => 'BAIXAR NO NAS',
+                        'badge' => $eval['badge'],
+                        'score' => $score,
+                        'seeds' => $seeds,
+                        'preference_matched' => $eval['preference_matched'],
                         'isDirectVideo' => ! empty($s['url']),
                         'canDownloadToNas' => true,
                     ];
-                    $count++;
                 }
+
+                // Ordena streams em ordem decrescente de pontuação de preferência + seeds
+                usort($streams, fn ($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
+
+                // Retorna os top 8 melhores
+                $streams = array_slice($streams, 0, 8);
             }
         } catch (\Throwable $e) {
             Log::warning('Erro ao consultar Torrentio público: '.$e->getMessage());

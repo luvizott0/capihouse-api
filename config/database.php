@@ -64,6 +64,19 @@ return [
             ]) : [],
         ],
 
+        'mysql_prod' => [
+            'driver' => 'mysql',
+            'host' => env('DB_PROD_HOST', '192.168.5.254'),
+            'port' => env('DB_PROD_PORT', '3306'),
+            'database' => env('DB_PROD_DATABASE', 'capihouse'),
+            'username' => env('DB_PROD_USERNAME', 'capihouse'),
+            'password' => env('DB_PROD_PASSWORD', 'zPSO9d7qiwGLu56WxheQXkYT'),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => false,
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

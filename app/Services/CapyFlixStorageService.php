@@ -132,6 +132,47 @@ class CapyFlixStorageService
     }
 
     /**
+     * Retorna a lista de números de episódios baixados no NAS para uma temporada específica.
+     *
+     * @return int[]
+     */
+    public function getSeasonDownloadedEpisodes(string $mediaType, string $title, int $season = 1): array
+    {
+        if ($mediaType === 'movie') {
+            return $this->findLocalMediaUrl('movie', $title) ? [1] : [];
+        }
+
+        $mediaRoot = $this->getMediaRoot();
+        $cleanTitle = preg_replace('/[^\w\s\-\.\(\)]/u', '', $title);
+        $cleanTitle = trim(preg_replace('/\s+/', ' ', $cleanTitle));
+        $targetDir = $mediaRoot.DIRECTORY_SEPARATOR.'séries'.DIRECTORY_SEPARATOR.$cleanTitle.DIRECTORY_SEPARATOR."Temporada {$season}";
+
+        $downloaded = [];
+        if (is_dir($targetDir)) {
+            $files = @scandir($targetDir) ?: [];
+            foreach ($files as $f) {
+                if ($f === '.' || $f === '..') {
+                    continue;
+                }
+                // Identifica padrões como "1x02", "01x02", "S01E02", "S1E2", "E02", etc.
+                if (preg_match('/(?:^|[\s\.\-_])(?:S?0*'.preg_quote((string) $season, '/').'[xE]|E)0*(\d+)/i', $f, $m)) {
+                    $downloaded[] = (int) $m[1];
+                }
+            }
+        }
+
+        return array_values(array_unique($downloaded));
+    }
+
+    /**
+     * Verifica se o filme ou episódio específico já está baixado no NAS.
+     */
+    public function isMediaDownloaded(string $mediaType, string $title, ?int $season = 1, ?int $episode = 1): bool
+    {
+        return $this->findLocalMediaUrl($mediaType, $title, $season ?? 1, $episode ?? 1) !== null;
+    }
+
+    /**
      * Varre o diretório e calcula os tamanhos.
      */
     protected function scanDirectory(string $dir): array

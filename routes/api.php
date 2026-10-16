@@ -57,10 +57,13 @@ Route::prefix('capyflix')->group(function () {
     Route::delete('/file', [CapyFlixController::class, 'deleteFile']);
     Route::get('/downloads', [CapyFlixController::class, 'downloads']);
     Route::post('/download', [CapyFlixController::class, 'startDownload']);
+    Route::post('/batch-download', [CapyFlixController::class, 'batchDownload']);
+    Route::get('/media-status', [CapyFlixController::class, 'mediaStatus']);
     Route::delete('/download/{id}', [CapyFlixController::class, 'cancelDownload']);
     Route::get('/resolve-streams', [CapyFlixController::class, 'resolveStreams']);
     Route::get('/debrid-config', [CapyFlixController::class, 'getDebridConfig']);
     Route::post('/debrid-config', [CapyFlixController::class, 'saveDebridConfig']);
+    Route::get('/qbittorrent-status', [CapyFlixController::class, 'qbittorrentStatus']);
 });
 
 // Authenticated routes

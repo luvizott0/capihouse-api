@@ -29,7 +29,7 @@ class UserResource extends JsonResource
             'birth' => $this->birth?->format('Y-m-d'),
             'instagram' => $this->instagram,
             'spotify' => $this->spotify,
-            'has_spotify_connected' => ! empty($this->spotify_refresh_token),
+            'has_spotify_connected' => $this->hasSpotifyConnected(),
             'spotify_display_name' => $this->spotify_display_name,
             'spotify_avatar_url' => $this->spotify_avatar_url,
             'spotify_profile_url' => $this->spotify_profile_url,

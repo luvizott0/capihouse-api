@@ -136,13 +136,15 @@ class SpotifyService
      */
     public function getValidUserAccessToken(User $user): ?string
     {
-        if (empty($user->spotify_refresh_token)) {
+        $refreshToken = $user->getSafeSpotifyRefreshToken();
+        if (empty($refreshToken)) {
             return null;
         }
 
+        $accessToken = $user->getSafeSpotifyAccessToken();
         // Se o token ainda é válido por pelo menos 1 minuto, use-o
-        if ($user->spotify_access_token && $user->spotify_token_expires_at && $user->spotify_token_expires_at->gt(now()->addMinute())) {
-            return $user->spotify_access_token;
+        if ($accessToken && $user->spotify_token_expires_at && $user->spotify_token_expires_at->gt(now()->addMinute())) {
+            return $accessToken;
         }
 
         // Renova o token
@@ -152,7 +154,7 @@ class SpotifyService
                 ->timeout(5)
                 ->post('https://accounts.spotify.com/api/token', [
                     'grant_type' => 'refresh_token',
-                    'refresh_token' => $user->spotify_refresh_token,
+                    'refresh_token' => $refreshToken,
                 ]);
 
             if (! $response->successful()) {

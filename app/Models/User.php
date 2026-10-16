@@ -83,7 +83,29 @@ class User extends Authenticatable
 
     public function hasSpotifyConnected(): bool
     {
-        return ! empty($this->spotify_refresh_token);
+        try {
+            return ! empty($this->getRawOriginal('spotify_refresh_token'));
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    public function getSafeSpotifyRefreshToken(): ?string
+    {
+        try {
+            return $this->spotify_refresh_token;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function getSafeSpotifyAccessToken(): ?string
+    {
+        try {
+            return $this->spotify_access_token;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function hasLastFmConnected(): bool
