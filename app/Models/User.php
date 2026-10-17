@@ -123,14 +123,14 @@ class User extends Authenticatable
         if (empty($value)) {
             return null;
         }
-        if (str_starts_with($value, '/')) {
-            return $value;
-        }
         if (str_contains($value, '/capihouse-media/')) {
             $relative = preg_replace('/^.*\/capihouse-media\//', '', $value);
             $disk = config('filesystems.default', 'public');
 
             return Storage::disk($disk)->url($relative);
+        }
+        if (str_starts_with($value, '/')) {
+            return $value;
         }
         if (str_contains($value, '/storage/')) {
             $relative = preg_replace('/^.*\/storage\//', '', $value);
@@ -151,14 +151,14 @@ class User extends Authenticatable
         if (empty($value)) {
             return null;
         }
-        if (str_starts_with($value, '/')) {
-            return $value;
-        }
         if (str_contains($value, '/capihouse-media/')) {
             $relative = preg_replace('/^.*\/capihouse-media\//', '', $value);
             $disk = config('filesystems.default', 'public');
 
             return Storage::disk($disk)->url($relative);
+        }
+        if (str_starts_with($value, '/')) {
+            return $value;
         }
         if (str_contains($value, '/storage/')) {
             $relative = preg_replace('/^.*\/storage\//', '', $value);
