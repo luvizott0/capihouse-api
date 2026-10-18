@@ -188,6 +188,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/episodes/rate', [CapyShowTimeController::class, 'rateEpisode']);
             Route::post('/episodes/watch-previous', [CapyShowTimeController::class, 'markPreviousEpisodes']);
             Route::get('/my-list', [CapyShowTimeController::class, 'myList']);
+            Route::get('/up-next', [CapyShowTimeController::class, 'upNext']);
             Route::post('/episodes/sync-watch', [CapyShowTimeController::class, 'syncWatchedByTmdb']);
             Route::get('/watch-progress', [CapyShowTimeController::class, 'getWatchProgress']);
             Route::post('/watch-progress', [CapyShowTimeController::class, 'saveWatchProgress']);
