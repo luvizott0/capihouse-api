@@ -1,0 +1,76 @@
+name: Deploy Production - API (Oracle Cloud)
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - '.editorconfig'
+  workflow_dispatch:
+
+jobs:
+  deploy-oracle:
+    name: Deploy Oracle Cloud (Production)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Executar Deploy via SSH na Oracle Cloud
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            echo "==================================================="
+            echo "🚀 Iniciando Deploy de Produção na Oracle Cloud"
+            echo "==================================================="
+
+            echo "📥 Atualizando código fonte no repositório local..."
+            cd /home/ubuntu/capihouse-deploy/api-src
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "🔨 Compilando imagem Docker nativa ARM64 (capihouse-api:arm64)..."
+            docker build -t capihouse-api:arm64 .
+
+            echo "🔄 Recriando contêineres da API..."
+            cd /home/ubuntu/capihouse-deploy
+            docker compose up -d --force-recreate api reverb queue scheduler
+
+            echo "⚡ Aplicando migrações de banco de dados..."
+            docker exec capihouse-api php artisan migrate --force
+
+            echo "🧹 Atualizando caches de configuração e rotas..."
+            docker exec capihouse-api php artisan optimize:clear
+            docker exec capihouse-api php artisan config:cache
+            docker exec capihouse-api php artisan route:cache
+            docker exec capihouse-api php artisan event:cache
+
+            echo "🩺 Verificando integridade da aplicação (Healthcheck)..."
+            HEALTHY=false
+            for i in $(seq 1 15); do
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/up || echo "000")
+              if [ "$HTTP_CODE" = "200" ]; then
+                HEALTHY=true
+                echo "✅ Aplicação respondendo 200 OK no endpoint /up!"
+                break
+              fi
+              echo "Tentativa $i: HTTP $HTTP_CODE. Aguardando 3s..."
+              sleep 3
+            done
+
+            if [ "$HEALTHY" = false ]; then
+              echo "🚨 Falha na verificação de integridade pós-deploy!"
+              docker logs --tail 50 capihouse-api
+              exit 1
+            fi
+
+            echo "🧹 Limpando imagens Docker antigas..."
+            docker image prune -f || true
+
+            echo "==================================================="
+            echo "🎉 Deploy de Produção concluído com sucesso!"
+            echo "==================================================="

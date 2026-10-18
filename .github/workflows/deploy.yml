@@ -1,9 +1,9 @@
-name: Deploy Homelab - API
+name: Deploy Sandbox Homelab - API
 
 on:
   push:
     branches:
-      - main
+      - release
     paths-ignore:
       - '**.md'
       - '.gitignore'
