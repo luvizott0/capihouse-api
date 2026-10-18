@@ -35,3 +35,10 @@ php artisan migrate                    # Run database migrations
 php artisan route:list --path=api      # List registered API routes
 ./vendor/bin/pint                      # Run code styling formatter
 ```
+
+## 🌿 Git & Deployment Policy for AI Agents
+- **NEVER commit or push directly to `main` or `release` without explicit user permission.**
+- Always work in `feat/*` or `fix/*` branches created from `develop`.
+- `release` triggers deployment to Homelab Sandbox (BMO).
+- `main` triggers deployment to Production (Oracle Cloud API).
+
