@@ -12,7 +12,6 @@ use App\Http\Controllers\Api\CapyShowTimeController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\GameReviewController;
 use App\Http\Controllers\Api\GroupController;
-use App\Http\Controllers\Api\GroupMessageController;
 use App\Http\Controllers\Api\InterestController;
 use App\Http\Controllers\Api\LastFmController;
 use App\Http\Controllers\Api\LetterboxdController;
@@ -138,24 +137,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/events/{event}/invite', [EventController::class, 'inviteGuests']);
         Route::delete('/events/{event}', [EventController::class, 'destroy']);
 
-        // Groups
+        // Groups (Filtros de Audiência)
         Route::get('/groups', [GroupController::class, 'index']);
         Route::post('/groups', [GroupController::class, 'store']);
         Route::get('/groups/{group}', [GroupController::class, 'show']);
         Route::match(['put', 'patch', 'post'], '/groups/{group}', [GroupController::class, 'update']);
         Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
-        Route::post('/groups/{group}/invite', [GroupController::class, 'invite']);
-        Route::post('/groups/{group}/accept-invite', [GroupController::class, 'acceptInvite']);
-        Route::post('/groups/{group}/decline-invite', [GroupController::class, 'declineInvite']);
-        Route::post('/groups/{group}/leave', [GroupController::class, 'leave']);
-        Route::post('/groups/{group}/read', [GroupController::class, 'markAsRead']);
         Route::get('/groups/{group}/members', [GroupController::class, 'members']);
-
-        // Group Messages (Chat)
-        Route::get('/groups/{group}/messages', [GroupMessageController::class, 'index']);
-        Route::post('/groups/{group}/messages', [GroupMessageController::class, 'store']);
-        Route::put('/groups/{group}/messages/{message}', [GroupMessageController::class, 'update']);
-        Route::delete('/groups/{group}/messages/{message}', [GroupMessageController::class, 'destroy']);
 
         // Notifications
         Route::get('/notifications', [NotificationController::class, 'index']);
