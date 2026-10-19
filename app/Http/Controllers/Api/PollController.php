@@ -21,8 +21,9 @@ class PollController extends Controller
 
         // Check group authorization
         if ($post->group_id) {
-            $isMember = auth()->user()->acceptedGroups()->where('groups.id', $post->group_id)->exists();
-            if (! $isMember && ! $isAdmin) {
+            $isCreatorOrMember = $post->user_id === $userId ||
+                $post->group()->whereHas('members', fn ($m) => $m->where('users.id', $userId))->exists();
+            if (! $isCreatorOrMember) {
                 return response()->json(['message' => 'Você não tem permissão para interagir com este post.'], 403);
             }
         }

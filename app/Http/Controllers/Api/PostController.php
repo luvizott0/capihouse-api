@@ -62,7 +62,7 @@ class PostController extends Controller
                 return response()->json(['message' => 'Grupo não encontrado.'], 404);
             }
             $isCreatorOrMember = $group->creator_id === $userId || $group->members()->where('users.id', $userId)->exists();
-            if (! $isCreatorOrMember && ! $isAdmin) {
+            if (! $isCreatorOrMember) {
                 return response()->json(['message' => 'Você não tem permissão para visualizar posts deste grupo.'], 403);
             }
             $query->where('group_id', $groupId);
@@ -70,16 +70,12 @@ class PostController extends Controller
         } else {
             // Feed geral (mesclado) ou abas de filtro: Todas, Mídias, Filmes, Séries, Jogos
             $query->whereNull('event_id');
-            $query->where(function ($q) use ($userId, $isAdmin) {
-                $q->whereNull('group_id');
-                if ($isAdmin) {
-                    $q->orWhereNotNull('group_id');
-                } else {
-                    $q->orWhere('user_id', $userId)
-                        ->orWhereHas('group.members', function ($m) use ($userId) {
-                            $m->where('users.id', $userId);
-                        });
-                }
+            $query->where(function ($q) use ($userId) {
+                $q->whereNull('group_id')
+                    ->orWhere('user_id', $userId)
+                    ->orWhereHas('group.members', function ($m) use ($userId) {
+                        $m->where('users.id', $userId);
+                    });
             });
 
             $tab = $request->input('tab', $request->input('feed_type'));
@@ -225,7 +221,7 @@ class PostController extends Controller
         $posts = $query->orderByRaw('COALESCE(watched_at, created_at) DESC')->orderByDesc('id')->paginate(15);
 
         // Transform collection to append is_liked by current user
-        $posts->getCollection()->transform(function ($post) use ($userId, $isAdmin) {
+        $posts->getCollection()->transform(function ($post) use ($userId) {
             $post->is_liked = $post->likes->isNotEmpty();
             $this->formatPostPoll($post, $userId);
             if ($post->comments) {
@@ -239,7 +235,7 @@ class PostController extends Controller
 
             // Grupos são filtros privados exclusivos do autor:
             // Quem não é o autor (mesmo sendo membro do grupo) não vê o grupo no post
-            if ($post->group && $post->user_id !== $userId && ! $isAdmin) {
+            if ($post->group && $post->user_id !== $userId) {
                 $post->setRelation('group', null);
                 $post->group_id = null;
             }
@@ -258,18 +254,14 @@ class PostController extends Controller
         if ($post->group_id) {
             $isCreatorOrMember = $post->user_id === $userId ||
                 $post->group()->whereHas('members', fn ($m) => $m->where('users.id', $userId))->exists();
-            if (! $isCreatorOrMember && ! $isAdmin) {
+            if (! $isCreatorOrMember) {
                 return response()->json(['message' => 'Você não tem permissão para visualizar este post.'], 403);
-            }
-            if ($post->user_id !== $userId && ! $isAdmin) {
-                $post->setRelation('group', null);
-                $post->group_id = null;
             }
         }
 
         if ($post->event_id) {
             $event = $post->event;
-            $isInvitedOrOwner = $event && ($event->user_id === $userId || $event->guests()->where('users.id', $userId)->exists());
+            $isInvitedOrOwner = $event && ($event->user_id === $userId || $event->guests()->where('users.id', $userId))->exists();
             if (! $isInvitedOrOwner && ! $isAdmin) {
                 return response()->json(['message' => 'Você não tem permissão para visualizar este post.'], 403);
             }
@@ -293,6 +285,13 @@ class PostController extends Controller
             'repostedPost.user:id,name,username,avatar_url',
             'repostedPost.media',
         ])->loadCount(['likes', 'comments']);
+
+        // Grupos são filtros privados exclusivos do autor:
+        // Quem não é o autor (mesmo sendo membro do grupo) não vê o grupo no post
+        if ($post->group && $post->user_id !== $userId) {
+            $post->setRelation('group', null);
+            $post->group_id = null;
+        }
 
         $post->is_liked = $post->likes->isNotEmpty();
         $this->formatPostPoll($post, $userId);
@@ -373,7 +372,7 @@ class PostController extends Controller
             if ($originalPost->group_id) {
                 $isCreatorOrMember = $originalPost->user_id === auth()->id() ||
                     $originalPost->group()->whereHas('members', fn ($m) => $m->where('users.id', auth()->id()))->exists();
-                if (! $isCreatorOrMember && ! auth()->user()->isAdmin()) {
+                if (! $isCreatorOrMember) {
                     return response()->json(['message' => 'Você não tem permissão para repostar uma publicação deste grupo.'], 403);
                 }
             }
@@ -387,7 +386,7 @@ class PostController extends Controller
         $groupId = $request->input('group_id');
         if ($groupId) {
             $group = Group::find($groupId);
-            if (! $group || ($group->creator_id !== auth()->id() && ! auth()->user()->isAdmin())) {
+            if (! $group || $group->creator_id !== auth()->id()) {
                 return response()->json(['message' => 'Você só pode usar os seus próprios grupos como filtro de audiência.'], 403);
             }
         }

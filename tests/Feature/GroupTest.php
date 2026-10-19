@@ -221,5 +221,21 @@ class GroupTest extends TestCase
         // Outsider cannot view individual post
         $outsiderPostShow = $this->actingAs($outsider)->getJson("/api/posts/{$postId}");
         $outsiderPostShow->assertStatus(403);
+
+        // Admin outsider also DOES NOT see the post in feed or individual show (private audience filter)
+        $adminOutsider = $this->createApprovedUser(['role' => UserRoles::Admin]);
+        $adminFeed = $this->actingAs($adminOutsider)->getJson('/api/posts');
+        $adminFeed->assertStatus(200)
+            ->assertJsonCount(0, 'data');
+
+        $this->actingAs($adminOutsider)->getJson("/api/posts/{$postId}")
+            ->assertStatus(403);
+
+        $this->actingAs($adminOutsider)->postJson("/api/posts/{$postId}/like")
+            ->assertStatus(403);
+
+        $this->actingAs($adminOutsider)->postJson("/api/posts/{$postId}/comments", [
+            'content' => 'Comentário não autorizado',
+        ])->assertStatus(403);
     }
 }

@@ -13,6 +13,15 @@ class PostLikeController extends Controller
     public function toggle(Post $post)
     {
         $userId = auth()->id();
+
+        if ($post->group_id) {
+            $isCreatorOrMember = $post->user_id === $userId ||
+                $post->group()->whereHas('members', fn ($m) => $m->where('users.id', $userId))->exists();
+            if (! $isCreatorOrMember) {
+                return response()->json(['message' => 'Você não tem permissão para interagir com este post.'], 403);
+            }
+        }
+
         $like = PostLike::where('post_id', $post->id)->where('user_id', $userId)->first();
 
         if ($like) {

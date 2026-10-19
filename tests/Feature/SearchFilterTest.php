@@ -118,19 +118,22 @@ class SearchFilterTest extends TestCase
         ]);
         $group1->created_at = '2026-09-01 10:00:00';
         $group1->save();
-        $group1->members()->attach($user->id, ['role' => 'owner', 'status' => 'accepted']);
 
         $group2 = Group::create([
             'name' => 'Gamers Noturnos',
             'description' => 'Jogatina toda sexta',
-            'creator_id' => $otherUser->id,
+            'creator_id' => $user->id,
         ]);
         $group2->created_at = '2026-09-05 12:00:00';
         $group2->save();
-        $group2->members()->attach([
-            $otherUser->id => ['role' => 'owner', 'status' => 'accepted'],
-            $user->id => ['role' => 'member', 'status' => 'accepted'],
+
+        $group3 = Group::create([
+            'name' => 'Grupo de Outro Usuario',
+            'description' => 'Nao deve aparecer',
+            'creator_id' => $otherUser->id,
         ]);
+        $group3->created_at = '2026-09-05 12:00:00';
+        $group3->save();
 
         // 1. Search by query
         $res = $this->actingAs($user)->getJson('/api/groups?q=Curitiba');
@@ -144,11 +147,11 @@ class SearchFilterTest extends TestCase
         $this->assertCount(1, $res->json('data'));
         $this->assertEquals($group2->id, $res->json('data.0.id'));
 
-        // 3. Search by user_id (creator)
-        $res = $this->actingAs($user)->getJson("/api/groups?user_id={$user->id}");
-        $res->assertStatus(200);
-        $this->assertCount(1, $res->json('data'));
-        $this->assertEquals($group1->id, $res->json('data.0.id'));
+        // 3. Other user groups never appear
+        $resOther = $this->actingAs($otherUser)->getJson('/api/groups');
+        $resOther->assertStatus(200);
+        $this->assertCount(1, $resOther->json('data'));
+        $this->assertEquals($group3->id, $resOther->json('data.0.id'));
     }
 
     public function test_filter_by_date_range_across_entities()

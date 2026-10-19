@@ -21,6 +21,20 @@ class GroupController extends Controller
             $query->where('name', 'like', "%{$search}%");
         }
 
+        if ($request->filled('start_date') || $request->filled('end_date')) {
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [$startDate.' 00:00:00', $endDate.' 23:59:59']);
+            } elseif ($startDate) {
+                $query->where('created_at', '>=', $startDate.' 00:00:00');
+            } elseif ($endDate) {
+                $query->where('created_at', '<=', $endDate.' 23:59:59');
+            }
+        } elseif ($request->filled('date')) {
+            $query->whereDate('created_at', $request->input('date'));
+        }
+
         $groups = $query->latest()->paginate(50);
 
         return response()->json($groups);
@@ -69,7 +83,7 @@ class GroupController extends Controller
     {
         $userId = auth()->id();
 
-        if ($group->creator_id !== $userId && ! auth()->user()->isAdmin()) {
+        if ($group->creator_id !== $userId) {
             return response()->json(['message' => 'Grupo não encontrado ou não autorizado.'], 403);
         }
 
@@ -80,7 +94,7 @@ class GroupController extends Controller
     {
         $userId = auth()->id();
 
-        if ($group->creator_id !== $userId && ! auth()->user()->isAdmin()) {
+        if ($group->creator_id !== $userId) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 
@@ -146,7 +160,7 @@ class GroupController extends Controller
     {
         $userId = auth()->id();
 
-        if ($group->creator_id !== $userId && ! auth()->user()->isAdmin()) {
+        if ($group->creator_id !== $userId) {
             return response()->json(['message' => 'Não autorizado.'], 403);
         }
 

@@ -13,19 +13,17 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 });
 
 /**
- * Canal privado de grupo — apenas membros aceitos (ou admin)
- * Usado para posts de grupos, likes, comentários e chat.
+ * Canal privado de grupo — apenas o criador ou membros
+ * Usado para posts de grupos, likes e comentários exclusivos.
  */
 Broadcast::channel('group.{groupId}', function ($user, $groupId) {
-    if ($user->isAdmin()) {
-        return true;
+    $group = Group::find($groupId);
+    if (! $group) {
+        return false;
     }
 
-    return Group::find($groupId)
-        ?->members()
-        ->where('users.id', $user->id)
-        ->wherePivot('status', 'accepted')
-        ->exists() ?? false;
+    return (int) $group->creator_id === (int) $user->id
+        || $group->members()->where('users.id', $user->id)->exists();
 });
 
 /**

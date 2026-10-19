@@ -16,6 +16,14 @@ class PostCommentController extends Controller
 {
     public function store(Request $request, Post $post)
     {
+        if ($post->group_id) {
+            $isCreatorOrMember = $post->user_id === auth()->id() ||
+                $post->group()->whereHas('members', fn ($m) => $m->where('users.id', auth()->id()))->exists();
+            if (! $isCreatorOrMember) {
+                return response()->json(['message' => 'Você não tem permissão para interagir com este post.'], 403);
+            }
+        }
+
         $request->validate([
             'content' => 'required|string|max:500',
             'parent_id' => 'nullable|integer|exists:post_comments,id',
