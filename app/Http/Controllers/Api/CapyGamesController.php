@@ -53,6 +53,30 @@ class CapyGamesController extends Controller
     }
 
     /**
+     * Garante que um jogo pesquisado exista localmente e retorna seus dados
+     */
+    public function ensureGame(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'title' => 'required|string',
+            'external_id' => 'nullable|string',
+            'external_source' => 'nullable|string',
+            'cover_url' => 'nullable|string',
+            'banner_url' => 'nullable|string',
+            'summary' => 'nullable|string',
+            'developer' => 'nullable|string',
+            'publisher' => 'nullable|string',
+            'platforms' => 'nullable|array',
+            'genres' => 'nullable|array',
+        ]);
+
+        $game = $this->gamesService->findOrCreateGame($validated);
+        $game = $this->gamesService->enrichGameMetadata($game);
+
+        return response()->json(['data' => $game]);
+    }
+
+    /**
      * Minha biblioteca de jogos
      */
     public function myLibrary(Request $request): JsonResponse

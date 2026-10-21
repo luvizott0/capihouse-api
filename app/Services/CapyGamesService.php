@@ -196,13 +196,14 @@ class CapyGamesService
 
             $output = [];
             foreach ($featured as $f) {
-                $output[] = [
+                $game = $this->findOrCreateGame([
                     'external_id' => $f['id'],
                     'external_source' => 'steam',
                     'title' => $f['title'],
                     'cover_url' => $f['cover'],
                     'platforms' => ['PC', 'PlayStation', 'Xbox'],
-                ];
+                ]);
+                $output[] = $game->toArray();
             }
 
             return $output;
@@ -505,11 +506,94 @@ class CapyGamesService
     }
 
     /**
+     * Enriquece metadados do jogo (sinopse, prints, recursos, conquistas) se ainda não existirem
+     */
+    public function enrichGameMetadata(CapyGame $game): CapyGame
+    {
+        if ($game->external_source === 'steam' || str_starts_with($game->external_id ?? '', 'steam:')) {
+            $parts = explode(':', $game->external_id ?? '');
+            $appId = $parts[1] ?? null;
+
+            if ($appId && (empty($game->summary) || empty($game->raw_data['screenshots'] ?? null))) {
+                try {
+                    $res = Http::timeout(4)->get('https://store.steampowered.com/api/appdetails', [
+                        'appids' => $appId,
+                        'l' => 'brazilian',
+                        'cc' => 'BR',
+                    ]);
+
+                    if ($res->successful()) {
+                        $json = $res->json();
+                        $data = $json[$appId]['data'] ?? null;
+                        if ($data) {
+                            if (empty($game->summary) && ! empty($data['short_description'])) {
+                                $game->summary = $data['short_description'];
+                            }
+                            if (empty($game->developer) && ! empty($data['developers'])) {
+                                $game->developer = implode(', ', $data['developers']);
+                            }
+                            if (empty($game->publisher) && ! empty($data['publishers'])) {
+                                $game->publisher = implode(', ', $data['publishers']);
+                            }
+                            if (empty($game->banner_url) && ! empty($data['header_image'])) {
+                                $game->banner_url = $data['header_image'];
+                            }
+                            if (! empty($data['genres']) && (empty($game->genres) || count($game->genres) === 0)) {
+                                $game->genres = array_column($data['genres'], 'description');
+                            }
+
+                            $plats = [];
+                            if (! empty($data['platforms']['windows'])) {
+                                $plats[] = 'PC (Windows)';
+                            }
+                            if (! empty($data['platforms']['mac'])) {
+                                $plats[] = 'Mac';
+                            }
+                            if (! empty($data['platforms']['linux'])) {
+                                $plats[] = 'Linux / Steam Deck';
+                            }
+                            if (! empty($plats)) {
+                                $game->platforms = $plats;
+                            }
+
+                            $screenshots = [];
+                            foreach ($data['screenshots'] ?? [] as $s) {
+                                $screenshots[] = [
+                                    'id' => $s['id'] ?? null,
+                                    'thumbnail' => $s['path_thumbnail'] ?? null,
+                                    'full' => $s['path_full'] ?? null,
+                                ];
+                            }
+
+                            $categories = array_column($data['categories'] ?? [], 'description');
+
+                            $raw = $game->raw_data ?? [];
+                            $raw['screenshots'] = $screenshots;
+                            $raw['categories'] = $categories;
+                            $raw['achievements_count'] = $data['achievements']['total'] ?? 0;
+                            $raw['release_date'] = $data['release_date']['date'] ?? null;
+                            $raw['metacritic'] = $data['metacritic']['score'] ?? null;
+
+                            $game->raw_data = $raw;
+                            $game->save();
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("Falha ao enriquecer jogo {$game->id} do Steam ({$appId}): {$e->getMessage()}");
+                }
+            }
+        }
+
+        return $game;
+    }
+
+    /**
      * Retorna os detalhes de um jogo, estatísticas e amigos da casa que o possuem
      */
     public function getGameDetails(int $gameId, User $currentUser): array
     {
         $game = CapyGame::findOrFail($gameId);
+        $game = $this->enrichGameMetadata($game);
 
         $myStatus = CapyUserGame::where('user_id', $currentUser->id)
             ->where('game_id', $gameId)

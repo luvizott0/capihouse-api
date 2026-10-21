@@ -210,6 +210,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/search', [CapyGamesController::class, 'search']);
             Route::get('/popular', [CapyGamesController::class, 'popular']);
             Route::get('/games/{id}', [CapyGamesController::class, 'showGame']);
+            Route::post('/games/ensure', [CapyGamesController::class, 'ensureGame']);
             Route::get('/my-library', [CapyGamesController::class, 'myLibrary']);
             Route::post('/library/status', [CapyGamesController::class, 'setStatus']);
             Route::delete('/library/{id}', [CapyGamesController::class, 'removeGame']);
