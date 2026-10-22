@@ -16,8 +16,11 @@ class CapyUserGame extends Model
         'user_id',
         'game_id',
         'status',
+        'in_list',
+        'list_order',
         'platform',
         'hours_played',
+        'platform_hours',
         'rating',
         'review',
         'achievements_earned',
@@ -31,7 +34,10 @@ class CapyUserGame extends Model
     ];
 
     protected $casts = [
+        'in_list' => 'boolean',
+        'list_order' => 'integer',
         'hours_played' => 'float',
+        'platform_hours' => 'array',
         'rating' => 'float',
         'achievements_earned' => 'integer',
         'achievements_total' => 'integer',
@@ -41,6 +47,29 @@ class CapyUserGame extends Model
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
+
+    /**
+     * Retorna o status efetivo, aplicando a regra de pausa automática (> 30 dias sem atualizar)
+     */
+    public function getEffectiveStatusAttribute(): string
+    {
+        if ($this->status === 'playing' && $this->updated_at && $this->updated_at->lt(now()->subDays(30))) {
+            return 'on_hold';
+        }
+
+        return $this->status;
+    }
+
+    /**
+     * Atualiza as horas de uma plataforma e recalcula a soma total
+     */
+    public function setPlatformHours(string $platform, float $hours): void
+    {
+        $ph = $this->platform_hours ?: [];
+        $ph[$platform] = max(0, $hours);
+        $this->platform_hours = $ph;
+        $this->hours_played = round(array_sum($ph), 1);
+    }
 
     public function user(): BelongsTo
     {

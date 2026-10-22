@@ -145,7 +145,9 @@ class SteamSyncService
                 $userGame->platform = 'PC (Steam)';
             }
 
-            $userGame->hours_played = max($userGame->hours_played, $hours);
+            if ($hours > 0) {
+                $userGame->setPlatformHours('PC (Steam)', $hours);
+            }
             $userGame->save();
 
             $importedCount++;

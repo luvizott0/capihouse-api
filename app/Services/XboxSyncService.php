@@ -277,6 +277,19 @@ class XboxSyncService
                 $userGame->gamerscore_earned = $currentGamerscore;
                 $userGame->gamerscore_total = $totalGamerscore;
                 $userGame->source = 'xbox';
+
+                // Extrair tempo jogado da Xbox Live / OpenXBL e somar
+                $minutesPlayed = (int) (
+                    $item['stats']['minutesPlayed']
+                    ?? $item['stats']['MinutesPlayed']
+                    ?? $item['titleHistory']['minutesPlayed']
+                    ?? $item['minutesPlayed']
+                    ?? 0
+                );
+                if ($minutesPlayed > 0) {
+                    $userGame->setPlatformHours('Xbox', round($minutesPlayed / 60, 1));
+                }
+
                 if ($isMastered && empty($userGame->completed_at)) {
                     $userGame->completed_at = $playedAt;
                 }

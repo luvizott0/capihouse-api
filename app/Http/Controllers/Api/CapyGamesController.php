@@ -100,12 +100,13 @@ class CapyGamesController extends Controller
             'external_source' => 'nullable|string',
             'title' => 'nullable|string',
             'cover_url' => 'nullable|string',
-            'status' => 'required|string|in:plan_to_play,playing,completed,mastered,dropped,on_hold',
+            'status' => 'nullable|string|in:plan_to_play,playing,completed,dropped',
             'platform' => 'nullable|string|max:100',
             'hours_played' => 'nullable|numeric|min:0|max:10000',
             'rating' => 'nullable|numeric|min:0|max:10',
             'review' => 'nullable|string|max:5000',
             'is_favorite' => 'nullable|boolean',
+            'in_list' => 'nullable|boolean',
         ]);
 
         $game = null;
@@ -131,6 +132,42 @@ class CapyGamesController extends Controller
         return response()->json([
             'message' => 'Jogo atualizado com sucesso na sua biblioteca!',
             'user_game' => $userGame->load('game'),
+        ]);
+    }
+
+    /**
+     * Alterna a presença de um jogo na Lista (adicionar à lista / remover da lista)
+     */
+    public function toggleList(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'game_id' => 'required|integer',
+        ]);
+
+        $userGame = $this->gamesService->toggleList($request->user(), (int) $validated['game_id']);
+
+        return response()->json([
+            'message' => $userGame->in_list ? 'Jogo adicionado à sua Lista!' : 'Jogo removido da sua Lista.',
+            'user_game' => $userGame,
+            'in_list' => $userGame->in_list,
+        ]);
+    }
+
+    /**
+     * Reordena a Lista de jogos a jogar
+     */
+    public function reorderList(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'game_ids' => 'required|array',
+            'game_ids.*' => 'integer',
+        ]);
+
+        $list = $this->gamesService->reorderList($request->user(), $validated['game_ids']);
+
+        return response()->json([
+            'message' => 'Ordem da lista salva com sucesso!',
+            'data' => $list,
         ]);
     }
 

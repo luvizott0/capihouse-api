@@ -287,15 +287,43 @@ class CapyGamesService
         ]);
 
         $oldStatus = $userGame->exists ? $userGame->status : null;
-        $newStatus = $params['status'] ?? ($oldStatus ?: 'plan_to_play');
+        $requestedStatus = $params['status'] ?? null;
+
+        // Regra do usuário: Platinas (mastered) não podem ser marcadas manualmente (apenas sincronização)
+        if ($requestedStatus === 'mastered') {
+            $requestedStatus = $oldStatus === 'mastered' ? 'mastered' : 'completed';
+        }
+
+        // Regra do usuário: Se o jogo estava em pausa (on_hold) e teve nova atualização, volta para playing
+        if ($oldStatus === 'on_hold' && empty($requestedStatus)) {
+            $newStatus = 'playing';
+        } elseif ($requestedStatus === 'on_hold') {
+            // on_hold é apenas automático por inatividade (> 30 dias)
+            $newStatus = 'playing';
+        } else {
+            $newStatus = $requestedStatus ?? ($oldStatus ?: 'playing');
+        }
 
         $userGame->status = $newStatus;
+
         if (isset($params['platform'])) {
             $userGame->platform = $params['platform'];
         }
+
+        // Soma das horas de todas as plataformas
         if (isset($params['hours_played'])) {
-            $userGame->hours_played = (float) $params['hours_played'];
+            $targetPlat = $params['platform'] ?? ($userGame->platform ?: 'PC');
+            $userGame->setPlatformHours($targetPlat, (float) $params['hours_played']);
         }
+
+        if (isset($params['in_list'])) {
+            $userGame->in_list = (bool) $params['in_list'];
+            if ($userGame->in_list && empty($userGame->list_order)) {
+                $maxOrder = CapyUserGame::where('user_id', $user->id)->max('list_order') ?? 0;
+                $userGame->list_order = $maxOrder + 1;
+            }
+        }
+
         if (array_key_exists('rating', $params)) {
             $userGame->rating = $params['rating'] !== null ? (float) $params['rating'] : null;
         }
@@ -326,6 +354,51 @@ class CapyGamesService
         $this->syncMainCapihouseFeed($user, $game, $userGame);
 
         return $userGame;
+    }
+
+    /**
+     * Alterna a presença de um jogo na Lista prioritária (fila de jogos a jogar)
+     */
+    public function toggleList(User $user, int $gameId): CapyUserGame
+    {
+        $userGame = CapyUserGame::firstOrNew([
+            'user_id' => $user->id,
+            'game_id' => $gameId,
+        ]);
+
+        if (! $userGame->exists) {
+            $maxOrder = CapyUserGame::where('user_id', $user->id)->max('list_order') ?? 0;
+            $userGame->in_list = true;
+            $userGame->list_order = $maxOrder + 1;
+            $userGame->status = 'plan_to_play';
+        } else {
+            $userGame->in_list = ! $userGame->in_list;
+            if ($userGame->in_list && empty($userGame->list_order)) {
+                $maxOrder = CapyUserGame::where('user_id', $user->id)->max('list_order') ?? 0;
+                $userGame->list_order = $maxOrder + 1;
+            }
+        }
+
+        $userGame->save();
+
+        return $userGame->load('game');
+    }
+
+    /**
+     * Reordena a Lista de jogos do usuário de acordo com a ordem desejada para jogar
+     */
+    public function reorderList(User $user, array $gameIds): array
+    {
+        foreach ($gameIds as $index => $gId) {
+            CapyUserGame::where('user_id', $user->id)
+                ->where('game_id', (int) $gId)
+                ->update([
+                    'list_order' => $index + 1,
+                    'in_list' => true,
+                ]);
+        }
+
+        return $this->getUserLibrary($user->id, 'list')->toArray();
     }
 
     /**
@@ -494,15 +567,32 @@ class CapyGamesService
         $query = CapyUserGame::with('game')
             ->where('user_id', $userId);
 
-        if ($status && $status !== 'all') {
-            $query->where('status', $status);
+        if ($status === 'list') {
+            // Apenas jogos que o jogador ativamente adicionou à sua Lista prioritária
+            $query->where('in_list', true)
+                ->orderBy('list_order', 'asc')
+                ->orderByDesc('updated_at');
+        } else {
+            if ($status && $status !== 'all') {
+                $query->where('status', $status);
+            }
+            $query->orderByDesc('updated_at');
         }
 
         if ($platform && $platform !== 'all') {
             $query->where('platform', $platform);
         }
 
-        return $query->orderByDesc('updated_at')->get();
+        $items = $query->get();
+
+        // Regra do usuário: O status "em pausa" será automático após 30 dias sem nenhuma atualização naquele jogo
+        foreach ($items as $ug) {
+            if ($ug->status === 'playing' && $ug->updated_at && $ug->updated_at->lt(now()->subDays(30))) {
+                $ug->status = 'on_hold';
+            }
+        }
+
+        return $items;
     }
 
     /**
@@ -599,14 +689,23 @@ class CapyGamesService
             ->where('game_id', $gameId)
             ->first();
 
+        if ($myStatus && $myStatus->status === 'playing' && $myStatus->updated_at && $myStatus->updated_at->lt(now()->subDays(30))) {
+            $myStatus->status = 'on_hold';
+        }
+
         // Moradores da Capihouse que têm o jogo na biblioteca
         $housemates = CapyUserGame::with('user:id,name,username,avatar_url')
             ->where('game_id', $gameId)
             ->get()
             ->map(function ($ug) {
+                $status = $ug->status;
+                if ($status === 'playing' && $ug->updated_at && $ug->updated_at->lt(now()->subDays(30))) {
+                    $status = 'on_hold';
+                }
+
                 return [
                     'user' => $ug->user,
-                    'status' => $ug->status,
+                    'status' => $status,
                     'platform' => $ug->platform,
                     'rating' => $ug->rating,
                     'hours_played' => $ug->hours_played,
