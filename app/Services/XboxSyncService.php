@@ -143,6 +143,8 @@ class XboxSyncService
 
             // Selecionar os 25 jogos mais recentes + todos os jogos 100% miletados
             $recentTitles = array_slice($gameTitles, 0, 25);
+            $recentTitleIds = array_map(fn ($t) => (string) ($t['titleId'] ?? $t['id'] ?? ''), $recentTitles);
+
             $masteredTitles = array_filter($gameTitles, function ($item) {
                 $achievementData = $item['achievement'] ?? $item['achievements'] ?? [];
                 $currentGamerscore = (int) ($achievementData['currentGamerscore'] ?? $item['currentGamerscore'] ?? 0);
@@ -152,7 +154,7 @@ class XboxSyncService
                 return $progressPct >= 100 || ($currentGamerscore >= $totalGamerscore && $totalGamerscore > 0);
             });
 
-            // Unir sem duplicatas por titleId
+            // Unir sem duplicatas por titleId preservando ordem de atividade
             $selectedTitlesMap = [];
             foreach (array_merge($recentTitles, $masteredTitles) as $t) {
                 $tId = (string) ($t['titleId'] ?? $t['id'] ?? '');
@@ -162,8 +164,10 @@ class XboxSyncService
             }
 
             $importedCount = 0;
+            $index = 0;
 
             foreach ($selectedTitlesMap as $item) {
+                $index++;
                 $titleId = (string) ($item['titleId'] ?? $item['id'] ?? '');
                 $titleName = (string) ($item['name'] ?? $item['titleName'] ?? '');
 
@@ -225,7 +229,7 @@ class XboxSyncService
                     ?? $item['lastPlayed']
                     ?? $item['lastModified']
                     ?? null;
-                $playedAt = $lastUnlockedStr ? Carbon::parse($lastUnlockedStr) : now();
+                $playedAt = $lastUnlockedStr ? Carbon::parse($lastUnlockedStr) : now()->subMinutes($index);
 
                 $externalId = "xbox-{$user->id}-{$titleId}";
                 $existingPost = Post::where('user_id', $user->id)
@@ -270,7 +274,8 @@ class XboxSyncService
                 $prevAchievements = $userGame->achievements_earned ?? 0;
                 $isNewProgression = ($currentGamerscore > $prevScore) || ($currentAchievements > $prevAchievements);
 
-                $userGame->status = $isMastered ? 'mastered' : ($userGame->status ?: 'playing');
+                $isRecent = in_array($titleId, $recentTitleIds);
+                $userGame->status = $isMastered ? 'mastered' : ($isRecent ? 'playing' : ($userGame->status ?: 'playing'));
                 $userGame->platform = $platform;
                 $userGame->achievements_earned = $currentAchievements;
                 $userGame->achievements_total = $totalAchievements;
@@ -293,7 +298,12 @@ class XboxSyncService
                 if ($isMastered && empty($userGame->completed_at)) {
                     $userGame->completed_at = $playedAt;
                 }
+
+                // Preservar timestamp exato de quando o jogo foi jogado
+                $userGame->timestamps = false;
+                $userGame->updated_at = $playedAt;
                 $userGame->save();
+                $userGame->timestamps = true;
 
                 // 3. Registrar no Feed dedicado do CapyGames (conquistas e progresso aparecem aqui!)
                 if ($isNewProgression || ! $userGame->exists) {

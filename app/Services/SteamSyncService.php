@@ -57,6 +57,7 @@ class SteamSyncService
                             'cover_url' => "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{$appId}/library_600x900.jpg",
                             'banner_url' => "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{$appId}/header.jpg",
                             'recent_playtime' => $g['playtime_2weeks'] ?? 0,
+                            'rtime_last_played' => $g['rtime_last_played'] ?? 0,
                         ];
                     }
                 }
@@ -138,9 +139,14 @@ class SteamSyncService
             ]);
 
             // Se for jogo jogado recentemente nas últimas 2 semanas, marca como playing
-            if (! $userGame->exists) {
-                $status = ($item['recent_playtime'] > 0) ? 'playing' : ($hours > 0 ? 'completed' : 'plan_to_play');
+            if (($item['recent_playtime'] ?? 0) > 0) {
+                $userGame->status = 'playing';
+            } elseif (! $userGame->exists) {
+                $status = ($hours > 0 ? 'completed' : 'plan_to_play');
                 $userGame->status = $status;
+            }
+
+            if (! $userGame->exists) {
                 $userGame->source = 'steam';
                 $userGame->platform = 'PC (Steam)';
             }
@@ -148,7 +154,15 @@ class SteamSyncService
             if ($hours > 0) {
                 $userGame->setPlatformHours('PC (Steam)', $hours);
             }
-            $userGame->save();
+
+            if (! empty($item['rtime_last_played'])) {
+                $userGame->timestamps = false;
+                $userGame->updated_at = \Carbon\Carbon::createFromTimestamp($item['rtime_last_played']);
+                $userGame->save();
+                $userGame->timestamps = true;
+            } else {
+                $userGame->save();
+            }
 
             $importedCount++;
         }
