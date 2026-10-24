@@ -33,7 +33,7 @@ class CapyGamesService
 
             // 1. Jogos já cadastrados localmente no banco
             $localGames = CapyGame::where('title', 'like', "%{$query}%")
-                ->limit(6)
+                ->limit(20)
                 ->get();
 
             foreach ($localGames as $lg) {
@@ -99,7 +99,7 @@ class CapyGamesService
                             'genres' => [],
                         ];
 
-                        if (count($results) >= 14) {
+                        if (count($results) >= 30) {
                             break;
                         }
                     }
@@ -110,7 +110,7 @@ class CapyGamesService
 
             // 3. Busca complementar no Marketplace Xbox via OpenXBL Autosuggest (se configurado)
             $openxblKey = config('services.openxbl.api_key');
-            if ($openxblKey && count($results) < 14) {
+            if ($openxblKey && count($results) < 30) {
                 try {
                     $xblRes = Http::withHeaders([
                         'X-Authorization' => $openxblKey,
@@ -156,7 +156,7 @@ class CapyGamesService
                                         'genres' => [],
                                     ];
 
-                                    if (count($results) >= 16) {
+                                    if (count($results) >= 40) {
                                         break 2;
                                     }
                                 }
@@ -173,47 +173,139 @@ class CapyGamesService
     }
 
     /**
-     * Retorna jogos em destaque / populares
+     * Retorna jogos em destaque / populares com paginação e catálogo expandido
      */
-    public function getPopularGames(): array
+    public function getPopularGames(int $page = 1, int $perPage = 24): array
     {
-        return Cache::remember('capygames_popular_featured', 3600, function () {
-            // Jogos populares no Steam / comunidade
-            $featured = [
-                ['id' => 'steam:1091500', 'title' => 'Cyberpunk 2077', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1091500/library_600x900.jpg'],
-                ['id' => 'steam:1245620', 'title' => 'ELDEN RING', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/library_600x900.jpg'],
-                ['id' => 'steam:292030', 'title' => 'The Witcher 3: Wild Hunt', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/292030/library_600x900.jpg'],
-                ['id' => 'steam:1086940', 'title' => "Baldur's Gate 3", 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1086940/library_600x900.jpg'],
-                ['id' => 'steam:1172470', 'title' => 'Apex Legends', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1172470/library_600x900.jpg'],
-                ['id' => 'steam:730', 'title' => 'Counter-Strike 2', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/730/library_600x900.jpg'],
-                ['id' => 'steam:2358720', 'title' => 'Black Myth: Wukong', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2358720/library_600x900.jpg'],
-                ['id' => 'steam:883710', 'title' => 'Resident Evil 2', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/883710/library_600x900.jpg'],
-                ['id' => 'steam:1145360', 'title' => 'Hades', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1145360/library_600x900.jpg'],
-                ['id' => 'steam:413150', 'title' => 'Stardew Valley', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/413150/library_600x900.jpg'],
-                ['id' => 'steam:105600', 'title' => 'Terraria', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/105600/library_600x900.jpg'],
-                ['id' => 'steam:1151640', 'title' => 'Horizon Zero Dawn™ Complete Edition', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1151640/library_600x900.jpg'],
+        $allPopular = Cache::remember('capygames_popular_catalog_v3', 43200, function () {
+            $seenTitles = [];
+            $output = [];
+
+            // 1. Jogos já existentes no banco local que têm cover_url válida
+            $localGames = CapyGame::whereNotNull('cover_url')
+                ->where('cover_url', '!=', '')
+                ->orderByDesc('id')
+                ->get();
+
+            foreach ($localGames as $lg) {
+                $norm = mb_strtolower(trim($lg->title));
+                if (isset($seenTitles[$norm])) {
+                    continue;
+                }
+                $seenTitles[$norm] = true;
+                $output[] = $lg->toArray();
+            }
+
+            // 2. Acervo curado de grandes sucessos e jogos aclamados
+            $curated = [
+                // Top RPGs / Ação / Aventura
+                ['id' => 'steam:1091500', 'title' => 'Cyberpunk 2077', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1091500/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['RPG', 'Ação', 'Ficção Científica']],
+                ['id' => 'steam:1245620', 'title' => 'ELDEN RING', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['RPG', 'Ação', 'Souls-like']],
+                ['id' => 'steam:292030', 'title' => 'The Witcher 3: Wild Hunt', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/292030/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['RPG', 'Aventura', 'Mundo Aberto']],
+                ['id' => 'steam:1086940', 'title' => "Baldur's Gate 3", 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1086940/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['RPG', 'Estratégia']],
+                ['id' => 'steam:1174180', 'title' => 'Red Dead Redemption 2', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1174180/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
+                ['id' => 'steam:271590', 'title' => 'Grand Theft Auto V', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/271590/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
+                ['id' => 'steam:1593500', 'title' => 'God of War', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1593500/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Ação', 'Aventura']],
+                ['id' => 'steam:1888930', 'title' => 'The Last of Us™ Part I', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1888930/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Ação', 'Aventura', 'Terror']],
+                ['id' => 'steam:1817070', 'title' => "Marvel's Spider-Man Remastered", 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1817070/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Ação', 'Aventura']],
+                ['id' => 'steam:2358720', 'title' => 'Black Myth: Wukong', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2358720/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Ação', 'RPG']],
+                ['id' => 'steam:2050650', 'title' => 'Resident Evil 4', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2050650/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Terror', 'Ação']],
+                ['id' => 'steam:883710', 'title' => 'Resident Evil 2', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/883710/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Terror', 'Ação']],
+                ['id' => 'steam:1145360', 'title' => 'Hades', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1145360/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'Ação', 'Roguelike']],
+                ['id' => 'steam:1145350', 'title' => 'Hades II', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1145350/library_600x900.jpg', 'platforms' => ['PC'], 'genres' => ['Indie', 'Ação', 'Roguelike']],
+                ['id' => 'steam:367520', 'title' => 'Hollow Knight', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/367520/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'Metroidvania', 'Aventura']],
+                ['id' => 'steam:504230', 'title' => 'Celeste', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/504230/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'Plataforma']],
+                ['id' => 'steam:413150', 'title' => 'Stardew Valley', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/413150/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'Simulação', 'RPG']],
+                ['id' => 'steam:105600', 'title' => 'Terraria', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/105600/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'Aventura', 'Sandbox']],
+                ['id' => 'steam:588650', 'title' => 'Dead Cells', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/588650/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'Roguelike', 'Ação']],
+                ['id' => 'steam:814380', 'title' => 'Sekiro: Shadows Die Twice', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/814380/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Ação', 'Souls-like']],
+                ['id' => 'steam:374320', 'title' => 'DARK SOULS™ III', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/374320/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['RPG', 'Ação', 'Souls-like']],
+                ['id' => 'steam:582010', 'title' => 'Monster Hunter: World', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/582010/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['RPG', 'Ação']],
+                ['id' => 'steam:1687950', 'title' => 'Persona 5 Royal', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1687950/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['RPG', 'JRPG', 'Anime']],
+                ['id' => 'steam:1551360', 'title' => 'Forza Horizon 5', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1551360/library_600x900.jpg', 'platforms' => ['PC', 'Xbox'], 'genres' => ['Corrida', 'Mundo Aberto']],
+                ['id' => 'steam:1172620', 'title' => 'Sea of Thieves', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1172620/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Aventura', 'Multijogador']],
+                ['id' => 'steam:1240440', 'title' => 'Halo Infinite', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1240440/library_600x900.jpg', 'platforms' => ['PC', 'Xbox'], 'genres' => ['Tiro / FPS', 'Ação']],
+                ['id' => 'steam:1716740', 'title' => 'Starfield', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1716740/library_600x900.jpg', 'platforms' => ['PC', 'Xbox'], 'genres' => ['RPG', 'Ficção Científica']],
+                ['id' => 'steam:782330', 'title' => 'DOOM Eternal', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/782330/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Tiro / FPS', 'Ação']],
+                ['id' => 'steam:377160', 'title' => 'Fallout 4', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/377160/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['RPG', 'Mundo Aberto', 'Ação']],
+                ['id' => 'steam:489830', 'title' => 'The Elder Scrolls V: Skyrim Special Edition', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/489830/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['RPG', 'Mundo Aberto']],
+                ['id' => 'steam:990080', 'title' => 'Hogwarts Legacy', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/990080/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['RPG', 'Ação', 'Aventura']],
+                ['id' => 'steam:553850', 'title' => 'HELLDIVERS™ 2', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/553850/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Tiro / FPS', 'Ação', 'Multijogador']],
+                ['id' => 'steam:1623730', 'title' => 'Palworld', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1623730/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Aventura', 'Sobrevivência', 'RPG']],
+                ['id' => 'steam:1172470', 'title' => 'Apex Legends', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1172470/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Tiro / FPS', 'Battle Royale']],
+                ['id' => 'steam:730', 'title' => 'Counter-Strike 2', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/730/library_600x900.jpg', 'platforms' => ['PC'], 'genres' => ['Tiro / FPS', 'Competitivo']],
+                ['id' => 'steam:570', 'title' => 'Dota 2', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/570/library_600x900.jpg', 'platforms' => ['PC'], 'genres' => ['Estratégia', 'MOBA']],
+                ['id' => 'steam:264710', 'title' => 'Subnautica', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/264710/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Aventura', 'Sobrevivência']],
+                ['id' => 'steam:632470', 'title' => 'Disco Elysium - The Final Cut', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/632470/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['RPG', 'Indie', 'Narrativo']],
+                ['id' => 'steam:646570', 'title' => 'Slay the Spire', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/646570/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'Estratégia', 'Roguelike']],
+                ['id' => 'steam:2379780', 'title' => 'Balatro', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2379780/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'Estratégia', 'Roguelike']],
+                ['id' => 'steam:2620600', 'title' => 'Metaphor: ReFantazio', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2620600/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['RPG', 'JRPG']],
+                ['id' => 'steam:2124490', 'title' => 'SILENT HILL 2', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2124490/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Terror', 'Ação']],
+                ['id' => 'steam:1462040', 'title' => 'FINAL FANTASY VII REMAKE INTERGRADE', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1462040/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['RPG', 'Ação']],
+                ['id' => 'steam:1627720', 'title' => 'Lies of P', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1627720/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Ação', 'Souls-like']],
+                ['id' => 'steam:1888040', 'title' => 'ARMORED CORE™ VI FIRES OF RUBICON™', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1888040/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Ação', 'Ficção Científica']],
+                ['id' => 'steam:1778820', 'title' => 'TEKKEN 8', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1778820/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Luta', 'Ação']],
+                ['id' => 'steam:1364780', 'title' => 'Street Fighter™ 6', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1364780/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Luta', 'Ação']],
+                ['id' => 'steam:1426210', 'title' => 'It Takes Two', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1426210/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Aventura', 'Cooperativo']],
+                ['id' => 'steam:1057090', 'title' => 'Ori and the Will of the Wisps', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1057090/library_600x900.jpg', 'platforms' => ['PC', 'Xbox', 'Nintendo Switch'], 'genres' => ['Plataforma', 'Aventura', 'Metroidvania']],
+                ['id' => 'steam:268910', 'title' => 'Cuphead', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/268910/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Ação', 'Indie', 'Plataforma']],
+                ['id' => 'steam:1868140', 'title' => 'DAVE THE DIVER', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1868140/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Nintendo Switch'], 'genres' => ['Indie', 'Aventura', 'Simulação']],
+                ['id' => 'steam:1244090', 'title' => 'Sea of Stars', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1244090/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch'], 'genres' => ['Indie', 'RPG', 'Retro']],
+                ['id' => 'steam:2054970', 'title' => "Dragon's Dogma 2", 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2054970/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['RPG', 'Ação', 'Mundo Aberto']],
+                ['id' => 'steam:2215430', 'title' => 'Ghost of Tsushima DIRECTOR\'S CUT', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2215430/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
+                ['id' => 'steam:1850570', 'title' => 'DEATH STRANDING DIRECTOR\'S CUT', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1850570/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Ação', 'Aventura']],
+                ['id' => 'steam:1817230', 'title' => 'Hi-Fi RUSH', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1817230/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Ação', 'Ritmo']],
+                ['id' => 'steam:870780', 'title' => 'Control Ultimate Edition', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/870780/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation', 'Xbox'], 'genres' => ['Ação', 'Aventura', 'Ficção Científica']],
+                ['id' => 'steam:1151640', 'title' => 'Horizon Zero Dawn™ Complete Edition', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1151640/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Ação', 'RPG', 'Mundo Aberto']],
+
+                // Nintendo Switch
+                ['id' => 'nintendo:zelda_totk', 'source' => 'nintendo', 'title' => 'The Legend of Zelda: Tears of the Kingdom', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000063714/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
+                ['id' => 'nintendo:zelda_botw', 'source' => 'nintendo', 'title' => 'The Legend of Zelda: Breath of the Wild', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000000025/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
+                ['id' => 'nintendo:mario_odyssey', 'source' => 'nintendo', 'title' => 'Super Mario Odyssey', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000001130/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Plataforma', 'Aventura']],
+                ['id' => 'nintendo:smash_ultimate', 'source' => 'nintendo', 'title' => 'Super Smash Bros. Ultimate', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000012332/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Luta', 'Multijogador']],
+                ['id' => 'nintendo:mario_kart_8', 'source' => 'nintendo', 'title' => 'Mario Kart 8 Deluxe', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000000153/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Corrida', 'Multijogador']],
             ];
 
-            $output = [];
-            foreach ($featured as $f) {
+            foreach ($curated as $item) {
+                $norm = mb_strtolower(trim($item['title']));
+                if (isset($seenTitles[$norm])) {
+                    continue;
+                }
+                $seenTitles[$norm] = true;
+
                 $game = $this->findOrCreateGame([
-                    'external_id' => $f['id'],
-                    'external_source' => 'steam',
-                    'title' => $f['title'],
-                    'cover_url' => $f['cover'],
-                    'platforms' => ['PC', 'PlayStation', 'Xbox'],
-                ]);
+                    'external_id' => $item['id'],
+                    'external_source' => $item['source'] ?? 'steam',
+                    'title' => $item['title'],
+                    'cover_url' => $item['cover'],
+                    'platforms' => $item['platforms'] ?? ['PC'],
+                    'genres' => $item['genres'] ?? [],
+                ], false);
+
                 $output[] = $game->toArray();
             }
 
             return $output;
         });
+
+        $total = count($allPopular);
+        $offset = ($page - 1) * $perPage;
+        $slice = array_slice($allPopular, $offset, $perPage);
+        $hasMore = ($offset + $perPage) < $total;
+
+        return [
+            'data' => $slice,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'has_more' => $hasMore,
+        ];
     }
 
     /**
      * Garante a existência do jogo na tabela `capy_games`
      */
-    public function findOrCreateGame(array $gameData): CapyGame
+    public function findOrCreateGame(array $gameData, bool $enrich = false): CapyGame
     {
         $externalSource = $gameData['external_source'] ?? 'manual';
         $externalId = $gameData['external_id'] ?? ('manual:'.Str::uuid());
@@ -223,9 +315,20 @@ class CapyGamesService
             ->first();
 
         if ($game) {
-            // Atualiza cover_url ou title se faltar
+            $dirty = false;
             if (empty($game->cover_url) && ! empty($gameData['cover_url'])) {
                 $game->cover_url = $gameData['cover_url'];
+                $dirty = true;
+            }
+            if (empty($game->genres) && ! empty($gameData['genres'])) {
+                $game->genres = $gameData['genres'];
+                $dirty = true;
+            }
+            if (empty($game->platforms) && ! empty($gameData['platforms'])) {
+                $game->platforms = $gameData['platforms'];
+                $dirty = true;
+            }
+            if ($dirty) {
                 $game->save();
             }
 
@@ -240,8 +343,8 @@ class CapyGamesService
         $publisher = $gameData['publisher'] ?? null;
         $platforms = $gameData['platforms'] ?? ['PC'];
 
-        // Se for jogo da Steam e não temos banner ou summary, busca detalhes via API Steam
-        if ($externalSource === 'steam' && str_starts_with($externalId, 'steam:')) {
+        // Se enriquecer detalhes sob demanda via Steam Store API
+        if ($enrich && $externalSource === 'steam' && str_starts_with($externalId, 'steam:')) {
             $appId = str_replace('steam:', '', $externalId);
             try {
                 $detailsRes = Http::timeout(3)->get("https://store.steampowered.com/api/appdetails?appids={$appId}&l=brazilian");

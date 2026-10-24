@@ -33,13 +33,16 @@ class CapyGamesController extends Controller
     }
 
     /**
-     * Jogos populares / em destaque
+     * Jogos populares / em destaque (com paginação e catálogo expandido)
      */
-    public function popular(): JsonResponse
+    public function popular(Request $request): JsonResponse
     {
-        $results = $this->gamesService->getPopularGames();
+        $page = max(1, (int) $request->input('page', 1));
+        $perPage = min(60, max(1, (int) $request->input('per_page', 24)));
 
-        return response()->json(['data' => $results]);
+        $result = $this->gamesService->getPopularGames($page, $perPage);
+
+        return response()->json($result);
     }
 
     /**
