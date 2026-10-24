@@ -62,7 +62,7 @@ class CapyUserGame extends Model
             return 'on_hold';
         }
 
-        return $this->status;
+        return (string) ($this->status ?? 'plan_to_play');
     }
 
     /**

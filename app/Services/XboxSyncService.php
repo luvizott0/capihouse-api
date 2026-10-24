@@ -163,6 +163,9 @@ class XboxSyncService
                 }
             }
 
+            // Buscar tempo jogado (MinutesPlayed) na Xbox Live via OpenXBL stats
+            $playtimeMap = $this->fetchPlaytimeMinutes($apiKey, (string) $xuid, array_keys($selectedTitlesMap));
+
             $importedCount = 0;
             $index = 0;
 
@@ -285,7 +288,8 @@ class XboxSyncService
 
                 // Extrair tempo jogado da Xbox Live / OpenXBL e somar
                 $minutesPlayed = (int) (
-                    $item['stats']['minutesPlayed']
+                    $playtimeMap[$titleId]
+                    ?? $item['stats']['minutesPlayed']
                     ?? $item['stats']['MinutesPlayed']
                     ?? $item['titleHistory']['minutesPlayed']
                     ?? $item['minutesPlayed']
@@ -387,5 +391,55 @@ class XboxSyncService
             Log::error("Exceção ao sincronizar Xbox para {$gamertag}: {$e->getMessage()}");
             throw $e;
         }
+    }
+
+    /**
+     * Busca os minutos jogados (MinutesPlayed) na Xbox Live via OpenXBL stats
+     *
+     * @param  string[]  $titleIds
+     * @return array<string, int> Map de [titleId => minutes]
+     */
+    protected function fetchPlaytimeMinutes(string $apiKey, string $xuid, array $titleIds): array
+    {
+        if (empty($titleIds)) {
+            return [];
+        }
+
+        $playtimeMap = [];
+        $chunks = array_chunk($titleIds, 25);
+
+        foreach ($chunks as $chunk) {
+            $statsPayload = array_map(fn ($id) => [
+                'name' => 'MinutesPlayed',
+                'titleId' => (string) $id,
+            ], $chunk);
+
+            try {
+                $response = Http::withHeaders([
+                    'X-Authorization' => $apiKey,
+                    'Accept' => 'application/json',
+                ])->timeout(6)->post('https://api.xbl.io/v2/player/stats', [
+                    'arrangebyfield' => 'xuid',
+                    'xuids' => [$xuid],
+                    'stats' => $statsPayload,
+                ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $stats = $data['content']['statlistscollection'][0]['stats'] ?? [];
+                    foreach ($stats as $st) {
+                        $tId = (string) ($st['titleid'] ?? '');
+                        $val = (int) ($st['value'] ?? 0);
+                        if ($tId && $val > 0) {
+                            $playtimeMap[$tId] = $val;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning("Falha ao buscar minutos jogados no Xbox para XUID {$xuid}: {$e->getMessage()}");
+            }
+        }
+
+        return $playtimeMap;
     }
 }
