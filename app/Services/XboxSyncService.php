@@ -197,9 +197,10 @@ class XboxSyncService
                 }
 
                 // Plataforma
-                $platform = 'Xbox';
+                $userPlatform = 'Xbox';
+                $availablePlatforms = ['Xbox'];
                 if (! empty($item['devices']) && is_array($item['devices'])) {
-                    $deviceLabels = array_map(function ($d) {
+                    $availablePlatforms = array_values(array_unique(array_map(function ($d) {
                         return match ($d) {
                             'XboxSeries' => 'Xbox Series X|S',
                             'XboxOne' => 'Xbox One',
@@ -207,9 +208,16 @@ class XboxSyncService
                             'PC' => 'PC',
                             default => (string) $d,
                         };
-                    }, $item['devices']);
-                    $platform = implode(', ', $deviceLabels);
+                    }, $item['devices'])));
+
+                    $hasXboxConsole = in_array('Xbox Series X|S', $availablePlatforms)
+                        || in_array('Xbox One', $availablePlatforms)
+                        || in_array('Xbox 360', $availablePlatforms)
+                        || in_array('Xbox', $availablePlatforms);
+
+                    $userPlatform = $hasXboxConsole ? 'Xbox' : ($availablePlatforms[0] ?? 'Xbox');
                 }
+                $platform = implode(', ', $availablePlatforms);
 
                 // Estatísticas de conquistas e Gamerscore
                 $achievementData = $item['achievement'] ?? $item['achievements'] ?? [];
@@ -263,7 +271,7 @@ class XboxSyncService
                         'title' => $titleName,
                         'slug' => Str::slug($titleName),
                         'cover_url' => $boxArtUrl,
-                        'platforms' => [$platform],
+                        'platforms' => $availablePlatforms,
                     ]
                 );
 
@@ -279,7 +287,7 @@ class XboxSyncService
 
                 $isRecent = in_array($titleId, $recentTitleIds);
                 $userGame->status = $isMastered ? 'mastered' : ($isRecent ? 'playing' : ($userGame->status ?: 'playing'));
-                $userGame->platform = $platform;
+                $userGame->platform = $userPlatform;
                 $userGame->achievements_earned = $currentAchievements;
                 $userGame->achievements_total = $totalAchievements;
                 $userGame->gamerscore_earned = $currentGamerscore;

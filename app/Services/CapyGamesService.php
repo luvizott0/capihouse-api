@@ -168,6 +168,71 @@ class CapyGamesService
                 }
             }
 
+            // 4. Busca no catálogo da Nintendo (Switch / consoles) via Algolia oficial
+            if (count($results) < 40) {
+                try {
+                    $nintendoRes = Http::timeout(3)->withHeaders([
+                        'X-Algolia-Application-Id' => 'U3B6GR4UA3',
+                        'X-Algolia-API-Key' => 'c4da8be7fd29f0f5bfa42920b0a99dc7',
+                    ])->post('https://u3b6gr4ua3-dsn.algolia.net/1/indexes/*/queries', [
+                        'requests' => [
+                            [
+                                'indexName' => 'ncom_game_en_us',
+                                'params' => http_build_query([
+                                    'query' => $query,
+                                    'hitsPerPage' => 15,
+                                ]),
+                            ],
+                        ],
+                    ]);
+
+                    if ($nintendoRes->successful()) {
+                        $hits = $nintendoRes->json('results.0.hits') ?? [];
+                        foreach ($hits as $hit) {
+                            $rawTitle = $hit['title'] ?? '';
+                            $title = trim(str_replace(['™', '®'], '', $rawTitle));
+                            if (! $title) {
+                                continue;
+                            }
+
+                            $norm = mb_strtolower($title);
+                            if (isset($seenTitles[$norm])) {
+                                continue;
+                            }
+                            $seenTitles[$norm] = true;
+
+                            $cover = $hit['boxart'] ?? $hit['boxArt'] ?? $hit['horizontalHeaderImage'] ?? null;
+                            $slug = $hit['slug'] ?? Str::slug($title);
+                            $summary = ! empty($hit['description']) ? strip_tags($hit['description']) : null;
+                            $developer = ! empty($hit['developers']) && is_array($hit['developers']) ? implode(', ', $hit['developers']) : null;
+                            $publisher = ! empty($hit['publishers']) && is_array($hit['publishers']) ? implode(', ', $hit['publishers']) : null;
+                            $genres = ! empty($hit['genres']) && is_array($hit['genres']) ? $hit['genres'] : [];
+                            $plat = ! empty($hit['platform']) ? $hit['platform'] : 'Nintendo Switch';
+
+                            $results[] = [
+                                'id' => null,
+                                'external_id' => "nintendo:{$slug}",
+                                'external_source' => 'nintendo',
+                                'title' => $title,
+                                'cover_url' => $cover,
+                                'banner_url' => $hit['horizontalHeaderImage'] ?? null,
+                                'summary' => $summary,
+                                'developer' => $developer,
+                                'publisher' => $publisher,
+                                'platforms' => [is_string($plat) ? $plat : 'Nintendo Switch'],
+                                'genres' => $genres,
+                            ];
+
+                            if (count($results) >= 40) {
+                                break;
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('CapyGames Nintendo search failed: '.$e->getMessage());
+                }
+            }
+
             return $results;
         });
     }
@@ -177,7 +242,7 @@ class CapyGamesService
      */
     public function getPopularGames(int $page = 1, int $perPage = 24): array
     {
-        $allPopular = Cache::remember('capygames_popular_catalog_v3', 43200, function () {
+        $allPopular = Cache::remember('capygames_popular_catalog_v4', 43200, function () {
             $seenTitles = [];
             $output = [];
 
@@ -259,11 +324,14 @@ class CapyGamesService
                 ['id' => 'steam:1151640', 'title' => 'Horizon Zero Dawn™ Complete Edition', 'cover' => 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1151640/library_600x900.jpg', 'platforms' => ['PC', 'PlayStation'], 'genres' => ['Ação', 'RPG', 'Mundo Aberto']],
 
                 // Nintendo Switch
-                ['id' => 'nintendo:zelda_totk', 'source' => 'nintendo', 'title' => 'The Legend of Zelda: Tears of the Kingdom', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000063714/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
-                ['id' => 'nintendo:zelda_botw', 'source' => 'nintendo', 'title' => 'The Legend of Zelda: Breath of the Wild', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000000025/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
-                ['id' => 'nintendo:mario_odyssey', 'source' => 'nintendo', 'title' => 'Super Mario Odyssey', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000001130/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Plataforma', 'Aventura']],
-                ['id' => 'nintendo:smash_ultimate', 'source' => 'nintendo', 'title' => 'Super Smash Bros. Ultimate', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000012332/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Luta', 'Multijogador']],
-                ['id' => 'nintendo:mario_kart_8', 'source' => 'nintendo', 'title' => 'Mario Kart 8 Deluxe', 'cover' => 'https://assets.nintendo.com/image/upload/ar_16:9,c_lpad,w_600/b_white/f_auto/q_auto/ncom/software/switch/70010000000153/desc/banner', 'platforms' => ['Nintendo Switch'], 'genres' => ['Corrida', 'Multijogador']],
+                ['id' => 'nintendo:zelda_totk', 'source' => 'nintendo', 'title' => 'The Legend of Zelda: Tears of the Kingdom', 'cover' => 'https://images.igdb.com/igdb/image/upload/t_cover_big/co5vmg.jpg', 'platforms' => ['Nintendo Switch'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
+                ['id' => 'nintendo:zelda_botw', 'source' => 'nintendo', 'title' => 'The Legend of Zelda: Breath of the Wild', 'cover' => 'https://assets.nintendo.com/image/upload/ncom/en_US/games/switch/t/the-legend-of-zelda-breath-of-the-wild-switch/boxart', 'platforms' => ['Nintendo Switch'], 'genres' => ['Ação', 'Aventura', 'Mundo Aberto']],
+                ['id' => 'nintendo:mario_odyssey', 'source' => 'nintendo', 'title' => 'Super Mario Odyssey', 'cover' => 'https://assets.nintendo.com/image/upload/ncom/en_US/games/switch/s/super-mario-odyssey-switch/boxart', 'platforms' => ['Nintendo Switch'], 'genres' => ['Plataforma', 'Aventura']],
+                ['id' => 'nintendo:smash_ultimate', 'source' => 'nintendo', 'title' => 'Super Smash Bros. Ultimate', 'cover' => 'https://assets.nintendo.com/image/upload/ncom/en_US/games/switch/s/super-smash-bros-ultimate-switch/boxart', 'platforms' => ['Nintendo Switch'], 'genres' => ['Luta', 'Multijogador']],
+                ['id' => 'nintendo:mario_kart_8', 'source' => 'nintendo', 'title' => 'Mario Kart 8 Deluxe', 'cover' => 'https://assets.nintendo.com/image/upload/ncom/en_US/games/switch/m/mario-kart-8-deluxe-switch/boxart', 'platforms' => ['Nintendo Switch'], 'genres' => ['Corrida', 'Multijogador']],
+                ['id' => 'nintendo:animal_crossing', 'source' => 'nintendo', 'title' => 'Animal Crossing: New Horizons', 'cover' => 'https://assets.nintendo.com/image/upload/ncom/en_US/games/switch/a/animal-crossing-new-horizons-switch/boxart', 'platforms' => ['Nintendo Switch'], 'genres' => ['Simulação', 'Casual']],
+                ['id' => 'nintendo:metroid_dread', 'source' => 'nintendo', 'title' => 'Metroid Dread', 'cover' => 'https://assets.nintendo.com/image/upload/ncom/en_US/games/switch/m/metroid-dread-switch/boxart', 'platforms' => ['Nintendo Switch'], 'genres' => ['Ação', 'Metroidvania']],
+                ['id' => 'nintendo:pokemon_arceus', 'source' => 'nintendo', 'title' => 'Pokémon Legends: Arceus', 'cover' => 'https://assets.nintendo.com/image/upload/ncom/en_US/games/switch/p/pokemon-legends-arceus-switch/boxart', 'platforms' => ['Nintendo Switch'], 'genres' => ['RPG', 'Aventura']],
             ];
 
             foreach ($curated as $item) {
