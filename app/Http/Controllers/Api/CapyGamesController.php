@@ -273,7 +273,7 @@ class CapyGamesController extends Controller
             return response()->json([
                 'message' => "Conta Steam salva, porém a sincronização automática falhou: {$e->getMessage()}",
                 'user' => new UserResource($user->fresh()),
-            ]);
+            ], 422);
         }
     }
 

@@ -39,6 +39,10 @@ return [
         'api_key' => env('OPENXBL_API_KEY'),
     ],
 
+    'steam' => [
+        'api_key' => env('STEAM_API_KEY'),
+    ],
+
     'spotify' => [
         'client_id' => env('SPOTIFY_CLIENT_ID'),
         'client_secret' => env('SPOTIFY_CLIENT_SECRET'),

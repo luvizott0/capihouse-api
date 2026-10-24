@@ -26,89 +26,76 @@ class SteamSyncService
         $steamIdentifier = trim((string) ($user->steam_id ?: $user->steam_username));
         $apiKey = config('services.steam.api_key') ?: env('STEAM_API_KEY');
 
+        if (! $apiKey) {
+            throw new \Exception('Chave da API da Steam (STEAM_API_KEY) não configurada no servidor. Gere uma chave em steamcommunity.com/dev/apikey e configure no arquivo .env.');
+        }
+
+        // 1. Resolver Vanity URL / apelido personalizado caso não seja SteamID64 numérico (17 dígitos)
+        if (! is_numeric($steamIdentifier) || strlen($steamIdentifier) < 16) {
+            try {
+                $vanityRes = Http::timeout(6)->get('https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/', [
+                    'key' => $apiKey,
+                    'vanityurl' => $steamIdentifier,
+                ]);
+
+                if ($vanityRes->successful() && $vanityRes->json('response.success') === 1) {
+                    $steamIdentifier = (string) $vanityRes->json('response.steamid');
+                    $user->update(['steam_id' => $steamIdentifier]);
+                } else {
+                    throw new \Exception("Conta Steam com usuário '{$steamIdentifier}' não encontrada. Informe seu SteamID64 (ex: 76561198...) ou apelido exato da URL.");
+                }
+            } catch (\Throwable $e) {
+                if ($e instanceof \Exception && str_contains($e->getMessage(), 'não encontrada')) {
+                    throw $e;
+                }
+                throw new \Exception("Erro ao resolver usuário Steam: {$e->getMessage()}");
+            }
+        }
+
         $importedCount = 0;
         $games = [];
 
-        // 1. Tentar buscar via Steam Web API oficial se houver STEAM_API_KEY e steam_id numérico (17 dígitos)
-        if ($apiKey && is_numeric($steamIdentifier) && strlen($steamIdentifier) >= 16) {
-            try {
-                $response = Http::timeout(8)->get('https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/', [
-                    'key' => $apiKey,
-                    'steamid' => $steamIdentifier,
-                    'format' => 'json',
-                    'include_appinfo' => true,
-                    'include_played_free_games' => true,
-                ]);
+        // 2. Buscar biblioteca de jogos via Steam Web API oficial
+        try {
+            $response = Http::timeout(10)->get('https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/', [
+                'key' => $apiKey,
+                'steamid' => $steamIdentifier,
+                'format' => 'json',
+                'include_appinfo' => true,
+                'include_played_free_games' => true,
+            ]);
 
-                if ($response->successful()) {
-                    $data = $response->json();
-                    $gamesList = $data['response']['games'] ?? [];
-                    foreach ($gamesList as $g) {
-                        $appId = $g['appid'] ?? null;
-                        if (! $appId) {
-                            continue;
-                        }
-                        $playtimeMinutes = $g['playtime_forever'] ?? 0;
-                        $hours = round($playtimeMinutes / 60, 1);
-
-                        $games[] = [
-                            'app_id' => $appId,
-                            'name' => $g['name'] ?? "Steam App {$appId}",
-                            'hours' => $hours,
-                            'cover_url' => "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{$appId}/library_600x900.jpg",
-                            'banner_url' => "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{$appId}/header.jpg",
-                            'recent_playtime' => $g['playtime_2weeks'] ?? 0,
-                            'rtime_last_played' => $g['rtime_last_played'] ?? 0,
-                        ];
+            if ($response->successful()) {
+                $data = $response->json();
+                $gamesList = $data['response']['games'] ?? [];
+                foreach ($gamesList as $g) {
+                    $appId = $g['appid'] ?? null;
+                    if (! $appId) {
+                        continue;
                     }
+                    $playtimeMinutes = $g['playtime_forever'] ?? 0;
+                    $hours = round($playtimeMinutes / 60, 1);
+
+                    $games[] = [
+                        'app_id' => $appId,
+                        'name' => $g['name'] ?? "Steam App {$appId}",
+                        'hours' => $hours,
+                        'cover_url' => "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{$appId}/library_600x900.jpg",
+                        'banner_url' => "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{$appId}/header.jpg",
+                        'recent_playtime' => $g['playtime_2weeks'] ?? 0,
+                        'rtime_last_played' => $g['rtime_last_played'] ?? 0,
+                    ];
                 }
-            } catch (\Throwable $e) {
-                Log::warning("Falha ao sincronizar Steam via Web API para {$user->username}: {$e->getMessage()}");
+            } else {
+                throw new \Exception("Steam API retornou erro HTTP {$response->status()}.");
             }
-        }
-
-        // 2. Fallback: Buscar via Community XML público (funciona com vanity URL ou steamid64 se o perfil for público)
-        if (empty($games)) {
-            try {
-                $url = is_numeric($steamIdentifier) && strlen($steamIdentifier) >= 16
-                    ? "https://steamcommunity.com/profiles/{$steamIdentifier}/games?xml=1"
-                    : "https://steamcommunity.com/id/{$steamIdentifier}/games?xml=1";
-
-                $res = Http::withHeaders([
-                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CapyHouse/1.0',
-                ])->timeout(8)->get($url);
-
-                if ($res->successful() && str_contains($res->body(), '<games>')) {
-                    $xml = @simplexml_load_string($res->body());
-                    if ($xml && isset($xml->games->game)) {
-                        foreach ($xml->games->game as $g) {
-                            $appId = (int) $g->appID;
-                            if (! $appId) {
-                                continue;
-                            }
-                            $hours = (float) str_replace(',', '.', (string) ($g->hoursOnRecord ?? '0'));
-                            $recentHours = (float) str_replace(',', '.', (string) ($g->hoursLast2Weeks ?? '0'));
-
-                            $games[] = [
-                                'app_id' => $appId,
-                                'name' => (string) $g->name,
-                                'hours' => $hours,
-                                'cover_url' => "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{$appId}/library_600x900.jpg",
-                                'banner_url' => "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{$appId}/header.jpg",
-                                'recent_playtime' => $recentHours > 0 ? (int) ($recentHours * 60) : 0,
-                            ];
-                        }
-                    }
-                }
-            } catch (\Throwable $e) {
-                Log::warning("Falha ao buscar XML Steam da comunidade para {$user->username}: {$e->getMessage()}");
-            }
+        } catch (\Throwable $e) {
+            Log::warning("Falha ao sincronizar Steam via Web API para {$user->username}: {$e->getMessage()}");
+            throw $e;
         }
 
         if (empty($games)) {
-            Log::info("Nenhum jogo público encontrado na conta Steam informada ({$steamIdentifier}).");
-
-            return 0;
+            throw new \Exception('Nenhum jogo público encontrado na sua conta Steam. Verifique se o seu perfil Steam e a opção "Detalhes dos jogos" estão marcados como PÚBLICOS nas Configurações de Privacidade da Steam.');
         }
 
         // 3. Processar jogos e salvar na biblioteca CapyGames
