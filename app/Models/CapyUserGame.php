@@ -48,6 +48,11 @@ class CapyUserGame extends Model
         'completed_at' => 'datetime',
     ];
 
+    protected $appends = [
+        'effective_status',
+        'progress_percentage',
+    ];
+
     /**
      * Retorna o status efetivo, aplicando a regra de pausa automática (> 30 dias sem atualizar)
      */
@@ -58,6 +63,33 @@ class CapyUserGame extends Model
         }
 
         return $this->status;
+    }
+
+    /**
+     * Retorna a porcentagem de progresso real do jogo
+     */
+    public function getProgressPercentageAttribute(): int
+    {
+        if ($this->status === 'completed' || $this->status === 'mastered') {
+            return 100;
+        }
+        if ($this->status === 'dropped') {
+            return 15;
+        }
+        if ($this->achievements_total > 0 && $this->achievements_earned > 0) {
+            return (int) min(100, round(($this->achievements_earned / $this->achievements_total) * 100));
+        }
+        if ($this->gamerscore_total > 0 && $this->gamerscore_earned > 0) {
+            return (int) min(100, round(($this->gamerscore_earned / $this->gamerscore_total) * 100));
+        }
+        if (! empty($this->game?->raw_data['achievements_count']) && $this->game->raw_data['achievements_count'] > 0 && $this->achievements_earned > 0) {
+            return (int) min(100, round(($this->achievements_earned / $this->game->raw_data['achievements_count']) * 100));
+        }
+        if ($this->hours_played > 0) {
+            return (int) min(95, round($this->hours_played * 4));
+        }
+
+        return 0;
     }
 
     /**

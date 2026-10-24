@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CapyGame;
 use App\Models\CapyUserGame;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -157,7 +158,7 @@ class SteamSyncService
 
             if (! empty($item['rtime_last_played'])) {
                 $userGame->timestamps = false;
-                $userGame->updated_at = \Carbon\Carbon::createFromTimestamp($item['rtime_last_played']);
+                $userGame->updated_at = Carbon::createFromTimestamp($item['rtime_last_played']);
                 $userGame->save();
                 $userGame->timestamps = true;
             } else {
