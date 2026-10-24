@@ -33,7 +33,7 @@ class SteamSyncService
         // 1. Resolver Vanity URL / apelido personalizado caso não seja SteamID64 numérico (17 dígitos)
         if (! is_numeric($steamIdentifier) || strlen($steamIdentifier) < 16) {
             try {
-                $vanityRes = Http::timeout(6)->get('https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/', [
+                $vanityRes = Http::withHeaders(['User-Agent' => 'CapyHouse/1.0'])->timeout(6)->get('https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/', [
                     'key' => $apiKey,
                     'vanityurl' => $steamIdentifier,
                 ]);
@@ -42,7 +42,7 @@ class SteamSyncService
                     $steamIdentifier = (string) $vanityRes->json('response.steamid');
                     $user->update(['steam_id' => $steamIdentifier]);
                 } else {
-                    throw new \Exception("Conta Steam com usuário '{$steamIdentifier}' não encontrada. Informe seu SteamID64 (ex: 76561198...) ou apelido exato da URL.");
+                    throw new \Exception("Conta Steam com usuário '{$steamIdentifier}' não encontrada. Verifique se o apelido é exatamente o do link do seu perfil (ou informe o SteamID64 numérico).");
                 }
             } catch (\Throwable $e) {
                 if ($e instanceof \Exception && str_contains($e->getMessage(), 'não encontrada')) {
@@ -57,12 +57,12 @@ class SteamSyncService
 
         // 2. Buscar biblioteca de jogos via Steam Web API oficial
         try {
-            $response = Http::timeout(10)->get('https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/', [
+            $response = Http::withHeaders(['User-Agent' => 'CapyHouse/1.0'])->timeout(12)->get('https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/', [
                 'key' => $apiKey,
                 'steamid' => $steamIdentifier,
                 'format' => 'json',
-                'include_appinfo' => true,
-                'include_played_free_games' => true,
+                'include_appinfo' => 1,
+                'include_played_free_games' => 1,
             ]);
 
             if ($response->successful()) {
