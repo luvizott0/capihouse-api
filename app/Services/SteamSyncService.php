@@ -6,6 +6,8 @@ use App\Models\CapyGame;
 use App\Models\CapyUserGame;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -98,11 +100,79 @@ class SteamSyncService
             throw new \Exception('Nenhum jogo público encontrado na sua conta Steam. Verifique se o seu perfil Steam e a opção "Detalhes dos jogos" estão marcados como PÚBLICOS nas Configurações de Privacidade da Steam.');
         }
 
-        // 3. Processar jogos e salvar na biblioteca CapyGames
+        // 3. Buscar conquistas da Steam concorrentemente para jogos com horas jogadas
+        $achievementsMap = [];
+        $playedGames = array_filter($games, fn ($g) => ($g['hours'] ?? 0) > 0);
+
+        if (! empty($playedGames)) {
+            // Prioriza os jogos jogados mais recentemente
+            usort($playedGames, function ($a, $b) {
+                $lastA = (int) ($a['rtime_last_played'] ?? 0);
+                $lastB = (int) ($b['rtime_last_played'] ?? 0);
+                if ($lastA !== $lastB) {
+                    return $lastB <=> $lastA;
+                }
+
+                return ($b['hours'] ?? 0) <=> ($a['hours'] ?? 0);
+            });
+
+            // Limita a busca a até 60 jogos com tempo jogado para garantir sincronização rápida
+            $gamesToFetch = array_slice($playedGames, 0, 60);
+            $chunks = array_chunk($gamesToFetch, 12);
+
+            foreach ($chunks as $chunk) {
+                try {
+                    $poolResponses = Http::pool(function (Pool $pool) use ($chunk, $apiKey, $steamIdentifier) {
+                        $requests = [];
+                        foreach ($chunk as $item) {
+                            $appId = (string) $item['app_id'];
+                            $requests[$appId] = $pool->as($appId)
+                                ->withHeaders(['User-Agent' => 'CapyHouse/1.0'])
+                                ->timeout(6)
+                                ->get('https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/', [
+                                    'key' => $apiKey,
+                                    'steamid' => $steamIdentifier,
+                                    'appid' => $appId,
+                                    'l' => 'brazilian',
+                                ]);
+                        }
+
+                        return $requests;
+                    });
+
+                    foreach ($poolResponses as $appId => $res) {
+                        if ($res instanceof Response && $res->successful()) {
+                            $playerstats = $res->json('playerstats');
+                            if (! empty($playerstats['success']) && isset($playerstats['achievements']) && is_array($playerstats['achievements'])) {
+                                $achievements = $playerstats['achievements'];
+                                $total = count($achievements);
+                                $earned = 0;
+                                foreach ($achievements as $ach) {
+                                    if (! empty($ach['achieved'])) {
+                                        $earned++;
+                                    }
+                                }
+
+                                $achievementsMap[(int) $appId] = [
+                                    'total' => $total,
+                                    'earned' => $earned,
+                                ];
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("Falha ao buscar lote de conquistas da Steam: {$e->getMessage()}");
+                }
+            }
+        }
+
+        // 4. Processar jogos e salvar na biblioteca CapyGames
         foreach ($games as $item) {
-            $appId = $item['app_id'];
+            $appId = (int) $item['app_id'];
             $name = $item['name'];
             $hours = $item['hours'];
+            $rtimeLastPlayed = (int) ($item['rtime_last_played'] ?? 0);
+            $recentPlaytime = (int) ($item['recent_playtime'] ?? 0);
             $externalId = "steam:{$appId}";
 
             $game = CapyGame::firstOrCreate(
@@ -126,17 +196,64 @@ class SteamSyncService
                 'game_id' => $game->id,
             ]);
 
-            // Se for jogo jogado recentemente nas últimas 2 semanas, marca como playing
-            if (($item['recent_playtime'] ?? 0) > 0) {
-                $userGame->status = 'playing';
-            } elseif (! $userGame->exists) {
-                $status = ($hours > 0 ? 'completed' : 'plan_to_play');
-                $userGame->status = $status;
+            // Atualizar contagem de conquistas se obtidas da Steam
+            if (isset($achievementsMap[$appId])) {
+                $userGame->achievements_total = $achievementsMap[$appId]['total'];
+                $userGame->achievements_earned = $achievementsMap[$appId]['earned'];
+
+                // Atualizar metadados do jogo se não possuía a quantidade de conquistas
+                if ($userGame->achievements_total > 0 && empty($game->raw_data['achievements_count'])) {
+                    $raw = $game->raw_data ?? [];
+                    $raw['achievements_count'] = $userGame->achievements_total;
+                    $game->raw_data = $raw;
+                    $game->save();
+                }
+            } elseif ($hours == 0) {
+                if (! $userGame->exists || $userGame->achievements_total === null) {
+                    $userGame->achievements_total = 0;
+                    $userGame->achievements_earned = 0;
+                }
             }
+
+            $totalAch = $userGame->achievements_total ?? 0;
+            $earnedAch = $userGame->achievements_earned ?? 0;
+            $isMastered = ($totalAch > 0 && $earnedAch >= $totalAch);
+            $isRecent = ($recentPlaytime > 0)
+                || ($rtimeLastPlayed > 0 && $rtimeLastPlayed >= now()->subDays(30)->timestamp);
 
             if (! $userGame->exists) {
                 $userGame->source = 'steam';
                 $userGame->platform = 'PC (Steam)';
+
+                if ($hours == 0) {
+                    $userGame->status = 'plan_to_play';
+                } elseif ($isMastered) {
+                    $userGame->status = 'mastered';
+                } elseif ($isRecent) {
+                    $userGame->status = 'playing';
+                } else {
+                    $userGame->status = 'on_hold';
+                }
+            } else {
+                // Registro existente: verificar se o usuário fez personalizações manuais
+                $hasManualIntervention = ! empty($userGame->review)
+                    || ! empty($userGame->rating)
+                    || ! empty($userGame->completed_at)
+                    || $userGame->status === 'dropped';
+
+                if ($isMastered) {
+                    $userGame->status = 'mastered';
+                } elseif ($hasManualIntervention) {
+                    // Mantém status manual customizado pelo usuário
+                } elseif ($userGame->status === 'completed') {
+                    // Corrige o bug anterior em que todo jogo com horas ficava 'completed'
+                    $userGame->status = $isRecent ? 'playing' : 'on_hold';
+                } elseif ($isRecent) {
+                    $userGame->status = 'playing';
+                } elseif ($userGame->status === 'playing' && ! $isRecent) {
+                    // Se não é jogado há mais de 30 dias, move para 'on_hold'
+                    $userGame->status = 'on_hold';
+                }
             }
 
             if ($hours > 0) {
