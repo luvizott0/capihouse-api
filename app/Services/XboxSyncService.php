@@ -312,6 +312,7 @@ class XboxSyncService
                 }
 
                 // Preservar timestamp exato de quando o jogo foi jogado
+                $userGame->last_played_at = $playedAt;
                 $userGame->timestamps = false;
                 $userGame->updated_at = $playedAt;
                 $userGame->save();

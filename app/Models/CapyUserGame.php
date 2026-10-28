@@ -32,6 +32,7 @@ class CapyUserGame extends Model
         'is_favorite',
         'started_at',
         'completed_at',
+        'last_played_at',
     ];
 
     protected $casts = [
@@ -48,6 +49,7 @@ class CapyUserGame extends Model
         'is_favorite' => 'boolean',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
+        'last_played_at' => 'datetime',
     ];
 
     protected $appends = [

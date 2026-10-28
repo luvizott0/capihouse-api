@@ -223,7 +223,7 @@ class SteamSyncService
 
             if (! $userGame->exists) {
                 $userGame->source = 'steam';
-                $userGame->platform = 'PC (Steam)';
+                $userGame->platform = 'Steam';
 
                 if ($hours == 0) {
                     $userGame->status = 'plan_to_play';
@@ -257,16 +257,19 @@ class SteamSyncService
             }
 
             if ($hours > 0) {
-                $userGame->setPlatformHours('PC (Steam)', $hours);
+                $userGame->setPlatformHours('Steam', $hours);
             }
 
             if (! empty($item['rtime_last_played'])) {
+                $userGame->last_played_at = Carbon::createFromTimestamp($item['rtime_last_played']);
                 $userGame->timestamps = false;
-                $userGame->updated_at = Carbon::createFromTimestamp($item['rtime_last_played']);
+                $userGame->updated_at = $userGame->last_played_at;
                 $userGame->save();
                 $userGame->timestamps = true;
             } else {
+                $userGame->timestamps = false;
                 $userGame->save();
+                $userGame->timestamps = true;
             }
 
             $importedCount++;

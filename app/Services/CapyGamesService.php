@@ -540,8 +540,11 @@ class CapyGamesService
         if (in_array($newStatus, ['completed', 'mastered'], true) && empty($userGame->completed_at)) {
             $userGame->completed_at = now();
         }
-        if ($newStatus === 'playing' && empty($userGame->started_at)) {
-            $userGame->started_at = now();
+        if ($newStatus === 'playing') {
+            $userGame->last_played_at = now();
+            if (empty($userGame->started_at)) {
+                $userGame->started_at = now();
+            }
         }
 
         $userGame->save();
@@ -796,12 +799,12 @@ class CapyGamesService
             // Apenas jogos que o jogador ativamente adicionou à sua Lista prioritária
             $query->where('in_list', true)
                 ->orderBy('list_order', 'asc')
-                ->orderByDesc('updated_at');
+                ->orderByRaw('COALESCE(last_played_at, updated_at) DESC');
         } else {
             if ($status && $status !== 'all') {
                 $query->where('status', $status);
             }
-            $query->orderByDesc('updated_at');
+            $query->orderByRaw('COALESCE(last_played_at, updated_at) DESC');
         }
 
         if ($platform && $platform !== 'all') {
@@ -812,7 +815,8 @@ class CapyGamesService
 
         // Regra do usuário: O status "em pausa" será automático após 30 dias sem nenhuma atualização naquele jogo
         foreach ($items as $ug) {
-            if ($ug->status === 'playing' && $ug->updated_at && $ug->updated_at->lt(now()->subDays(30))) {
+            $lastActivity = $ug->last_played_at ?? $ug->updated_at;
+            if ($ug->status === 'playing' && $lastActivity && $lastActivity->lt(now()->subDays(30))) {
                 $ug->status = 'on_hold';
             }
         }
@@ -1380,7 +1384,7 @@ class CapyGamesService
         // Últimos jogos atualizados
         $recentGames = CapyUserGame::with('game')
             ->where('user_id', $userId)
-            ->orderByDesc('updated_at')
+            ->orderByRaw('COALESCE(last_played_at, updated_at) DESC')
             ->limit(10)
             ->get();
 
