@@ -196,4 +196,81 @@ class CapyGamesTest extends TestCase
         $game = CapyGame::find($userGame->game_id);
         $this->assertContains('PlayStation 5', $game->platforms);
     }
+
+    public function test_completed_game_does_not_automatically_get_100_percent_progress_without_achievements()
+    {
+        $user = $this->createApprovedUser();
+        Sanctum::actingAs($user);
+
+        $game = CapyGame::create([
+            'title' => 'Sea of Stars',
+            'slug' => 'sea-of-stars',
+            'external_source' => 'steam',
+            'external_id' => 'steam:1244090',
+            'platforms' => ['Steam'],
+        ]);
+
+        // Jogo completado (zerado) sem conquistas registradas
+        $userGame = CapyUserGame::create([
+            'user_id' => $user->id,
+            'game_id' => $game->id,
+            'status' => 'completed',
+            'hours_played' => 35,
+            'achievements_earned' => 0,
+            'achievements_total' => 0,
+        ]);
+
+        // Conclusão não pode ser 100% nem baseada em horas heurísticas
+        $this->assertEquals(0, $userGame->progress_percentage);
+
+        // Se tiver 10 de 20 conquistas, o progresso é 50%
+        $userGame->achievements_earned = 10;
+        $userGame->achievements_total = 20;
+        $userGame->save();
+        $this->assertEquals(50, $userGame->progress_percentage);
+
+        // Apenas 'mastered' (platinado) tem 100% garantido
+        $userGame->status = 'mastered';
+        $userGame->save();
+        $this->assertEquals(100, $userGame->progress_percentage);
+    }
+
+    public function test_platform_names_are_normalized_to_steam_and_tails_of_iron_has_all_platforms()
+    {
+        $user = $this->createApprovedUser();
+        Sanctum::actingAs($user);
+
+        // Adiciona Tails of Iron com plataforma 'PC'
+        $payload = [
+            'title' => 'Tails of Iron',
+            'external_id' => 'steam:700580',
+            'external_source' => 'steam',
+            'status' => 'playing',
+            'platform' => 'PC',
+            'hours_played' => 12,
+        ];
+
+        $response = $this->postJson('/api/capygames/library/status', $payload);
+        $response->assertOk();
+
+        $userGame = CapyUserGame::where('user_id', $user->id)->first();
+        // A plataforma do usuário é normalizada para 'Steam'
+        $this->assertEquals('Steam', $userGame->platform);
+        $this->assertArrayHasKey('Steam', $userGame->platform_hours);
+        $this->assertArrayNotHasKey('PC', $userGame->platform_hours);
+
+        // Ao consultar os detalhes do Tails of Iron, todas as plataformas oficiais devem estar presentes
+        $detailsRes = $this->getJson("/api/capygames/games/{$userGame->game_id}");
+        $detailsRes->assertOk();
+        $platforms = $detailsRes->json('game.platforms');
+
+        $this->assertContains('Steam', $platforms);
+        $this->assertNotContains('PC', $platforms);
+        $this->assertNotContains('PC (Steam)', $platforms);
+        $this->assertContains('PlayStation 5', $platforms);
+        $this->assertContains('PlayStation 4', $platforms);
+        $this->assertContains('Xbox Series X|S', $platforms);
+        $this->assertContains('Xbox One', $platforms);
+        $this->assertContains('Nintendo Switch', $platforms);
+    }
 }

@@ -68,27 +68,25 @@ class CapyUserGame extends Model
     }
 
     /**
-     * Retorna a porcentagem de progresso real do jogo
+     * Retorna a porcentagem de conclusão baseada exclusivamente em conquistas reais sincronizadas
      */
     public function getProgressPercentageAttribute(): int
     {
-        if ($this->status === 'completed' || $this->status === 'mastered') {
+        // 100% vem exclusivamente de platinado (mastered sincronizado) ou de ter todas as conquistas
+        if ($this->status === 'mastered') {
             return 100;
         }
-        if ($this->status === 'dropped') {
-            return 15;
-        }
+
         if ($this->achievements_total > 0) {
             return (int) min(100, round((($this->achievements_earned ?? 0) / $this->achievements_total) * 100));
         }
+
         if ($this->gamerscore_total > 0) {
             return (int) min(100, round((($this->gamerscore_earned ?? 0) / $this->gamerscore_total) * 100));
         }
+
         if (! empty($this->game?->raw_data['achievements_count']) && $this->game->raw_data['achievements_count'] > 0) {
             return (int) min(100, round((($this->achievements_earned ?? 0) / $this->game->raw_data['achievements_count']) * 100));
-        }
-        if ($this->hours_played > 0) {
-            return (int) min(95, round($this->hours_played * 4));
         }
 
         return 0;
@@ -99,8 +97,19 @@ class CapyUserGame extends Model
      */
     public function setPlatformHours(string $platform, float $hours): void
     {
+        $targetPlat = trim($platform);
+        if (preg_match('/^(pc|windows|win32|pc\s*\(.*\)|steam.*)$/i', $targetPlat)) {
+            $targetPlat = 'Steam';
+        }
+
         $ph = $this->platform_hours ?: [];
-        $ph[$platform] = max(0, $hours);
+
+        // Limpa chaves legadas de PC duplicadas quando salvar Steam
+        if ($targetPlat === 'Steam') {
+            unset($ph['PC'], $ph['PC (Steam)'], $ph['PC (Windows)'], $ph['Windows']);
+        }
+
+        $ph[$targetPlat] = max(0, $hours);
         $this->platform_hours = $ph;
         $this->hours_played = round(array_sum($ph), 1);
     }
