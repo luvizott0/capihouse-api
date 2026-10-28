@@ -350,9 +350,12 @@ class CapyGamesTest extends TestCase
         $response->assertOk();
         $data = $response->json('data');
 
-        $this->assertCount(10, $data);
+        $this->assertCount(2, $data);
         // Primeiro item deve ser nota 10.0 (melhor avaliado)
         $this->assertEquals(10.0, (float) $data[0]['rating']);
+        $this->assertEquals('Top Game A', $data[0]['title']);
+        $this->assertEquals(7.5, (float) $data[1]['rating']);
+        $this->assertEquals('Low Game B', $data[1]['title']);
         $this->assertEquals('Top Game A', $data[0]['title']);
 
         // Verifica que está estritamente em ordem decrescente

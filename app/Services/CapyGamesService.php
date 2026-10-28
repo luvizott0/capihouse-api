@@ -1334,7 +1334,6 @@ class CapyGamesService
             ->take($limit)
             ->get();
 
-        $seenIds = [];
         $result = [];
 
         foreach ($ratedStats as $stat) {
@@ -1343,7 +1342,6 @@ class CapyGamesService
                 continue;
             }
 
-            $seenIds[$game->id] = true;
             $data = $game->toArray();
             $data['rating'] = (float) $stat->avg_rating;
             $data['community_rating'] = (float) $stat->avg_rating;
@@ -1351,67 +1349,7 @@ class CapyGamesService
             $result[] = $data;
         }
 
-        if (count($result) < $limit) {
-            $criticallyAcclaimed = [
-                ['title' => "Baldur's Gate 3", 'score' => 9.8],
-                ['title' => 'ELDEN RING', 'score' => 9.7],
-                ['title' => 'The Witcher 3: Wild Hunt', 'score' => 9.6],
-                ['title' => 'The Legend of Zelda: Tears of the Kingdom', 'score' => 9.6],
-                ['title' => 'The Legend of Zelda: Breath of the Wild', 'score' => 9.6],
-                ['title' => 'Red Dead Redemption 2', 'score' => 9.5],
-                ['title' => 'God of War', 'score' => 9.5],
-                ['title' => 'Hades', 'score' => 9.4],
-                ['title' => 'Hollow Knight', 'score' => 9.4],
-                ['title' => 'Celeste', 'score' => 9.3],
-                ['title' => 'Persona 5 Royal', 'score' => 9.3],
-                ['title' => 'Super Mario Odyssey', 'score' => 9.3],
-                ['title' => 'Cyberpunk 2077', 'score' => 9.1],
-                ['title' => 'Grand Theft Auto V', 'score' => 9.1],
-                ['title' => 'Sea of Stars', 'score' => 9.0],
-            ];
-
-            foreach ($criticallyAcclaimed as $item) {
-                if (count($result) >= $limit) {
-                    break;
-                }
-
-                $g = CapyGame::where('title', 'like', "%{$item['title']}%")->first();
-                if (! $g) {
-                    $slug = Str::slug($item['title']);
-                    $g = CapyGame::create([
-                        'title' => $item['title'],
-                        'slug' => $slug,
-                        'external_id' => "acclaimed:{$slug}",
-                        'external_source' => 'acclaimed',
-                        'cover_url' => 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=400&q=80',
-                        'platforms' => ['Steam', 'PlayStation 5', 'Xbox Series X|S'],
-                    ]);
-                }
-
-                if (isset($seenIds[$g->id])) {
-                    continue;
-                }
-
-                $seenIds[$g->id] = true;
-                $data = $g->toArray();
-                $data['rating'] = (float) $item['score'];
-                $data['community_rating'] = (float) $item['score'];
-                $data['ratings_count'] = 1;
-                $result[] = $data;
-            }
-        }
-
-        usort($result, function ($a, $b) {
-            $rA = (float) ($a['rating'] ?? $a['community_rating'] ?? 0);
-            $rB = (float) ($b['rating'] ?? $b['community_rating'] ?? 0);
-            if ($rA === $rB) {
-                return ($b['ratings_count'] ?? 0) <=> ($a['ratings_count'] ?? 0);
-            }
-
-            return $rB <=> $rA;
-        });
-
-        return array_slice($result, 0, $limit);
+        return $result;
     }
 
     /**
