@@ -21,7 +21,11 @@ return [
 
     'allowed_origins' => array_filter(array_map('trim', explode(',', env('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,http://localhost:3000,http://localhost:8007,https://capihouse.bmo,https://capyshowtime.bmo,http://capyshowtime.bmo')))),
 
-    'allowed_origins_patterns' => ['#.*\.bmo$#'],
+    'allowed_origins_patterns' => [
+        '#.*\.bmo$#',
+        '#.*\.capihouse\.com\.br$#',
+        '#.*\.pages\.dev$#',
+    ],
 
     'allowed_headers' => ['*'],
 
