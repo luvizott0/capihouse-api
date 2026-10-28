@@ -107,6 +107,8 @@ class CapyGamesController extends Controller
             'platform' => 'nullable|string|max:100',
             'hours_played' => 'nullable|numeric|min:0|max:10000',
             'rating' => 'nullable|numeric|min:0|max:10',
+            'aspect_ratings' => 'nullable|array',
+            'aspect_ratings.*' => 'nullable|numeric|min:1|max:10',
             'review' => 'nullable|string|max:5000',
             'is_favorite' => 'nullable|boolean',
             'in_list' => 'nullable|boolean',

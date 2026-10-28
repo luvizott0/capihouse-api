@@ -150,4 +150,50 @@ class CapyGamesTest extends TestCase
         $response->assertJsonPath('stats.total_hours', 85.5);
         $response->assertJsonPath('stats.avg_rating', 9.5);
     }
+
+    public function test_user_can_review_game_with_aspect_ratings_and_mean_is_computed()
+    {
+        $user = $this->createApprovedUser();
+        Sanctum::actingAs($user);
+
+        $payload = [
+            'title' => 'Elden Ring',
+            'external_id' => 'steam:1245620',
+            'external_source' => 'steam',
+            'cover_url' => 'https://example.com/eldenring.jpg',
+            'status' => 'completed',
+            'platform' => 'PlayStation 5',
+            'hours_played' => 110,
+            'aspect_ratings' => [
+                'gameplay' => 10,
+                'story' => 8,
+                'graphics' => 9,
+                'sound' => 10,
+                'performance' => 8,
+                'replay' => 9,
+                'level_design' => 10,
+                'innovation' => 8,
+            ],
+            'review' => 'Uma jornada extraordinária pelas Terras Intermédias.',
+        ];
+
+        $response = $this->postJson('/api/capygames/library/status', $payload);
+
+        $response->assertOk();
+
+        // Média de 10+8+9+10+8+9+10+8 = 72 / 8 = 9.0
+        $this->assertDatabaseHas('capy_user_games', [
+            'user_id' => $user->id,
+            'rating' => 9.0,
+            'platform' => 'PlayStation 5',
+        ]);
+
+        $userGame = CapyUserGame::where('user_id', $user->id)->first();
+        $this->assertEquals(10, $userGame->aspect_ratings['gameplay']);
+        $this->assertEquals(8, $userGame->aspect_ratings['story']);
+
+        // E o jogo deve agora conter PlayStation 5 nas plataformas conhecidas
+        $game = CapyGame::find($userGame->game_id);
+        $this->assertContains('PlayStation 5', $game->platforms);
+    }
 }

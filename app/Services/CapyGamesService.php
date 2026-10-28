@@ -507,7 +507,17 @@ class CapyGamesService
             }
         }
 
-        if (array_key_exists('rating', $params)) {
+        if (array_key_exists('aspect_ratings', $params)) {
+            $userGame->aspect_ratings = $params['aspect_ratings'];
+            if (is_array($params['aspect_ratings'])) {
+                $validScores = array_filter($params['aspect_ratings'], fn ($v) => $v !== null && is_numeric($v));
+                if (! empty($validScores)) {
+                    $userGame->rating = round(array_sum($validScores) / count($validScores), 1);
+                } elseif (array_key_exists('rating', $params)) {
+                    $userGame->rating = $params['rating'] !== null ? (float) $params['rating'] : null;
+                }
+            }
+        } elseif (array_key_exists('rating', $params)) {
             $userGame->rating = $params['rating'] !== null ? (float) $params['rating'] : null;
         }
         if (array_key_exists('review', $params)) {
@@ -528,6 +538,16 @@ class CapyGamesService
         }
 
         $userGame->save();
+
+        // Garante que a plataforma jogada seja adicionada ao catálogo do jogo se ainda não estiver
+        if (! empty($userGame->platform)) {
+            $currPlats = $game->platforms ?: [];
+            if (! in_array($userGame->platform, $currPlats, true)) {
+                $currPlats[] = $userGame->platform;
+                $game->platforms = array_values(array_unique($currPlats));
+                $game->save();
+            }
+        }
 
         // 1. Sempre registra atividade no feed dedicado do CapyGames
         $this->recordCapyGameActivity($user, $game, $userGame, $oldStatus, $newStatus);
@@ -662,6 +682,7 @@ class CapyGamesService
             'metadata' => [
                 'status' => $newStatus,
                 'rating' => $userGame->rating,
+                'aspect_ratings' => $userGame->aspect_ratings,
                 'hours_played' => $userGame->hours_played,
                 'platform' => $userGame->platform,
                 'cover_url' => $game->cover_url,
@@ -1051,14 +1072,16 @@ class CapyGamesService
         }
 
         // Moradores da Capihouse que têm o jogo na biblioteca (por game_id ou pelo mesmo jogo/slug)
-        $housemates = CapyUserGame::with('user:id,name,username,avatar_url')
+        $allUgQuery = CapyUserGame::with('user:id,name,username,avatar_url')
             ->where(function ($q) use ($game, $gameId) {
                 $q->where('game_id', $gameId);
                 if ($game->slug) {
                     $q->orWhereHas('game', fn ($sub) => $sub->where('slug', $game->slug)->orWhere('title', $game->title));
                 }
             })
-            ->get()
+            ->get();
+
+        $housemates = $allUgQuery
             ->unique('user_id')
             ->map(function ($ug) {
                 $status = $ug->status;
@@ -1071,6 +1094,7 @@ class CapyGamesService
                     'status' => $status,
                     'platform' => $ug->platform,
                     'rating' => $ug->rating,
+                    'aspect_ratings' => $ug->aspect_ratings,
                     'hours_played' => $ug->hours_played,
                     'review' => $ug->review,
                     'completed_at' => $ug->completed_at,
@@ -1089,10 +1113,72 @@ class CapyGamesService
         $avgRating = $ratingsQuery->avg('rating');
         $totalRatings = $ratingsQuery->count();
 
+        // Médias comunitárias por aspecto
+        $aspectAverages = [];
+        $ratedAspectsCount = [];
+        foreach ($allUgQuery as $ug) {
+            if (! empty($ug->aspect_ratings) && is_array($ug->aspect_ratings)) {
+                foreach ($ug->aspect_ratings as $aspectKey => $score) {
+                    if ($score !== null && is_numeric($score)) {
+                        $aspectAverages[$aspectKey] = ($aspectAverages[$aspectKey] ?? 0) + (float) $score;
+                        $ratedAspectsCount[$aspectKey] = ($ratedAspectsCount[$aspectKey] ?? 0) + 1;
+                    }
+                }
+            }
+        }
+        foreach ($aspectAverages as $aspectKey => $sum) {
+            $aspectAverages[$aspectKey] = round($sum / $ratedAspectsCount[$aspectKey], 1);
+        }
+
+        // Consolidar todas as plataformas onde o jogo está disponível (independente de onde o usuário joga)
+        $allPlatforms = $game->platforms ?: [];
+
+        // 1. Unificar com outras versões cadastradas com mesmo título ou slug
+        if ($game->slug || $game->title) {
+            $otherGames = CapyGame::where('id', '!=', $game->id)
+                ->where(function ($q) use ($game) {
+                    if ($game->slug) {
+                        $q->where('slug', $game->slug);
+                    }
+                    if ($game->title) {
+                        $q->orWhere('title', $game->title);
+                    }
+                })
+                ->get();
+            foreach ($otherGames as $og) {
+                if (! empty($og->platforms) && is_array($og->platforms)) {
+                    $allPlatforms = array_merge($allPlatforms, $og->platforms);
+                }
+            }
+        }
+
+        // 2. Unificar com plataformas registradas pelos moradores
+        foreach ($allUgQuery as $ug) {
+            if (! empty($ug->platform)) {
+                $allPlatforms[] = $ug->platform;
+            }
+            if (! empty($ug->platform_hours) && is_array($ug->platform_hours)) {
+                $allPlatforms = array_merge($allPlatforms, array_keys($ug->platform_hours));
+            }
+        }
+
+        // 3. Catálogo de plataformas conhecidas para títulos populares
+        $knownPlatforms = $this->getKnownPlatformsForGame($game->title);
+        if (! empty($knownPlatforms)) {
+            $allPlatforms = array_merge($allPlatforms, $knownPlatforms);
+        }
+
+        $cleanPlatforms = array_values(array_unique(array_filter(array_map('trim', $allPlatforms))));
+        if (! empty($cleanPlatforms) && $cleanPlatforms !== ($game->platforms ?: [])) {
+            $game->platforms = $cleanPlatforms;
+            $game->save();
+        }
+
         return [
             'game' => $game,
             'my_status' => $myStatus,
             'community_rating' => $avgRating ? round($avgRating, 1) : null,
+            'community_aspect_ratings' => ! empty($aspectAverages) ? $aspectAverages : null,
             'total_ratings' => $totalRatings,
             'housemates' => $housemates,
         ];
@@ -1158,5 +1244,64 @@ class CapyGamesService
             ],
             'recent_games' => $recentGames,
         ];
+    }
+
+    /**
+     * Dicionário de plataformas conhecidas para títulos populares multiplataforma
+     */
+    public function getKnownPlatformsForGame(string $title): array
+    {
+        $normalized = mb_strtolower(trim($title));
+
+        $dictionary = [
+            'cyberpunk 2077' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One'],
+            'elden ring' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One'],
+            'the witcher 3' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One', 'Nintendo Switch'],
+            "baldur's gate 3" => ['PC', 'PlayStation 5', 'Xbox Series X|S'],
+            'red dead redemption 2' => ['PC', 'PlayStation 4', 'Xbox One'],
+            'grand theft auto v' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One'],
+            'gta v' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One'],
+            'god of war' => ['PC', 'PlayStation 5', 'PlayStation 4'],
+            'the last of us' => ['PC', 'PlayStation 5', 'PlayStation 4'],
+            'spider-man' => ['PC', 'PlayStation 5', 'PlayStation 4'],
+            'black myth: wukong' => ['PC', 'PlayStation 5'],
+            'resident evil 4' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S'],
+            'resident evil 2' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One'],
+            'resident evil' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One'],
+            'hades' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One', 'Nintendo Switch'],
+            'hollow knight' => ['PC', 'PlayStation 4', 'Xbox One', 'Nintendo Switch'],
+            'celeste' => ['PC', 'PlayStation 4', 'Xbox One', 'Nintendo Switch'],
+            'dead cells' => ['PC', 'PlayStation 4', 'Xbox One', 'Nintendo Switch'],
+            'stardew valley' => ['PC', 'PlayStation 4', 'Xbox One', 'Nintendo Switch'],
+            'sea of stars' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One', 'Nintendo Switch'],
+            'hi-fi rush' => ['PC', 'PlayStation 5', 'Xbox Series X|S'],
+            'control' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One'],
+            'horizon zero dawn' => ['PC', 'PlayStation 5', 'PlayStation 4'],
+            'horizon forbidden west' => ['PC', 'PlayStation 5', 'PlayStation 4'],
+            'alan wake 2' => ['PC', 'PlayStation 5', 'Xbox Series X|S'],
+            'silent hill 2' => ['PC', 'PlayStation 5'],
+            'final fantasy vii remake' => ['PC', 'PlayStation 5', 'PlayStation 4'],
+            'final fantasy xvi' => ['PC', 'PlayStation 5'],
+            'death stranding' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S'],
+            'forza horizon 5' => ['PC', 'Xbox Series X|S', 'Xbox One'],
+            'starfield' => ['PC', 'Xbox Series X|S'],
+            'diablo iv' => ['PC', 'PlayStation 5', 'PlayStation 4', 'Xbox Series X|S', 'Xbox One'],
+            'minecraft' => ['PC', 'PlayStation 4', 'Xbox One', 'Nintendo Switch'],
+            'zelda' => ['Nintendo Switch'],
+            'mario' => ['Nintendo Switch'],
+            'metroid' => ['Nintendo Switch'],
+            'pokemon' => ['Nintendo Switch'],
+            'pokémon' => ['Nintendo Switch'],
+            'smash bros' => ['Nintendo Switch'],
+            'animal crossing' => ['Nintendo Switch'],
+        ];
+
+        foreach ($dictionary as $keyword => $platforms) {
+            if (str_contains($normalized, $keyword)) {
+                return $platforms;
+            }
+        }
+
+        return [];
     }
 }
