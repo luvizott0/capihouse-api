@@ -217,6 +217,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/library/reorder', [CapyGamesController::class, 'reorderList']);
             Route::delete('/library/{id}', [CapyGamesController::class, 'removeGame']);
             Route::get('/feed', [CapyGamesController::class, 'communityFeed']);
+            Route::get('/friends-games', [CapyGamesController::class, 'friendsRecentGames']);
+            Route::get('/top-rated', [CapyGamesController::class, 'topRatedGames']);
             Route::get('/users', [CapyGamesController::class, 'users']);
             Route::get('/users/{id}', [CapyGamesController::class, 'userProfile']);
             Route::post('/connect/steam', [CapyGamesController::class, 'connectSteam']);

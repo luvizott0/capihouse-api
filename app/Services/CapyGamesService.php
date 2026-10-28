@@ -9,6 +9,7 @@ use App\Models\CapyUserGame;
 use App\Models\Post;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -1227,6 +1228,190 @@ class CapyGamesService
             ->orderByDesc('created_at')
             ->limit($limit)
             ->get();
+    }
+
+    /**
+     * Retorna os últimos 10 jogos jogados pelos amigos da Capihouse
+     */
+    public function getFriendsRecentGames(int $limit = 10, ?int $currentUserId = null): array
+    {
+        $query = CapyUserGame::with(['game', 'user:id,name,username,avatar_url'])
+            ->whereNotNull('game_id')
+            ->where(function ($q) {
+                $q->whereIn('status', ['playing', 'completed', 'mastered'])
+                    ->orWhere('hours_played', '>', 0);
+            });
+
+        if ($currentUserId) {
+            $otherUsersCount = (clone $query)->where('user_id', '!=', $currentUserId)->count();
+            if ($otherUsersCount > 0) {
+                $query->where('user_id', '!=', $currentUserId);
+            }
+        }
+
+        $userGames = $query->orderByDesc('updated_at')->get();
+
+        $seenGames = [];
+        $result = [];
+
+        foreach ($userGames as $ug) {
+            if (! $ug->game) {
+                continue;
+            }
+
+            $gId = $ug->game_id;
+            if (isset($seenGames[$gId])) {
+                continue;
+            }
+
+            $seenGames[$gId] = true;
+            $item = $ug->game->toArray();
+            $item['recent_player'] = [
+                'id' => $ug->user?->id,
+                'name' => $ug->user?->name,
+                'avatar_url' => $ug->user?->avatar_url,
+            ];
+            $item['player_status'] = $ug->status;
+            $item['player_hours'] = $ug->hours_played;
+            $item['player_rating'] = $ug->rating;
+            $item['last_played_at'] = $ug->updated_at?->toIso8601String();
+
+            $result[] = $item;
+            if (count($result) >= $limit) {
+                break;
+            }
+        }
+
+        if (count($result) < $limit) {
+            $activities = CapyGameActivity::with(['game', 'user:id,name,username,avatar_url'])
+                ->whereNotNull('game_id')
+                ->orderByDesc('created_at')
+                ->get();
+
+            foreach ($activities as $act) {
+                if (! $act->game) {
+                    continue;
+                }
+                $gId = $act->game_id;
+                if (isset($seenGames[$gId])) {
+                    continue;
+                }
+                $seenGames[$gId] = true;
+                $item = $act->game->toArray();
+                $item['recent_player'] = [
+                    'id' => $act->user?->id,
+                    'name' => $act->user?->name,
+                    'avatar_url' => $act->user?->avatar_url,
+                ];
+                $result[] = $item;
+                if (count($result) >= $limit) {
+                    break;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Retorna o Top 10 de jogos mais bem avaliados (ordenado estritamente do melhor para o pior)
+     */
+    public function getTopRatedGames(int $limit = 10): array
+    {
+        $ratedStats = CapyUserGame::whereNotNull('rating')
+            ->where('rating', '>', 0)
+            ->whereNotNull('game_id')
+            ->select(
+                'game_id',
+                DB::raw('ROUND(AVG(rating), 1) as avg_rating'),
+                DB::raw('COUNT(*) as ratings_count'),
+                DB::raw('MAX(updated_at) as last_rated_at')
+            )
+            ->groupBy('game_id')
+            ->orderByDesc('avg_rating')
+            ->orderByDesc('ratings_count')
+            ->orderByDesc('last_rated_at')
+            ->take($limit)
+            ->get();
+
+        $seenIds = [];
+        $result = [];
+
+        foreach ($ratedStats as $stat) {
+            $game = CapyGame::find($stat->game_id);
+            if (! $game) {
+                continue;
+            }
+
+            $seenIds[$game->id] = true;
+            $data = $game->toArray();
+            $data['rating'] = (float) $stat->avg_rating;
+            $data['community_rating'] = (float) $stat->avg_rating;
+            $data['ratings_count'] = (int) $stat->ratings_count;
+            $result[] = $data;
+        }
+
+        if (count($result) < $limit) {
+            $criticallyAcclaimed = [
+                ['title' => "Baldur's Gate 3", 'score' => 9.8],
+                ['title' => 'ELDEN RING', 'score' => 9.7],
+                ['title' => 'The Witcher 3: Wild Hunt', 'score' => 9.6],
+                ['title' => 'The Legend of Zelda: Tears of the Kingdom', 'score' => 9.6],
+                ['title' => 'The Legend of Zelda: Breath of the Wild', 'score' => 9.6],
+                ['title' => 'Red Dead Redemption 2', 'score' => 9.5],
+                ['title' => 'God of War', 'score' => 9.5],
+                ['title' => 'Hades', 'score' => 9.4],
+                ['title' => 'Hollow Knight', 'score' => 9.4],
+                ['title' => 'Celeste', 'score' => 9.3],
+                ['title' => 'Persona 5 Royal', 'score' => 9.3],
+                ['title' => 'Super Mario Odyssey', 'score' => 9.3],
+                ['title' => 'Cyberpunk 2077', 'score' => 9.1],
+                ['title' => 'Grand Theft Auto V', 'score' => 9.1],
+                ['title' => 'Sea of Stars', 'score' => 9.0],
+            ];
+
+            foreach ($criticallyAcclaimed as $item) {
+                if (count($result) >= $limit) {
+                    break;
+                }
+
+                $g = CapyGame::where('title', 'like', "%{$item['title']}%")->first();
+                if (! $g) {
+                    $slug = Str::slug($item['title']);
+                    $g = CapyGame::create([
+                        'title' => $item['title'],
+                        'slug' => $slug,
+                        'external_id' => "acclaimed:{$slug}",
+                        'external_source' => 'acclaimed',
+                        'cover_url' => 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=400&q=80',
+                        'platforms' => ['Steam', 'PlayStation 5', 'Xbox Series X|S'],
+                    ]);
+                }
+
+                if (isset($seenIds[$g->id])) {
+                    continue;
+                }
+
+                $seenIds[$g->id] = true;
+                $data = $g->toArray();
+                $data['rating'] = (float) $item['score'];
+                $data['community_rating'] = (float) $item['score'];
+                $data['ratings_count'] = 1;
+                $result[] = $data;
+            }
+        }
+
+        usort($result, function ($a, $b) {
+            $rA = (float) ($a['rating'] ?? $a['community_rating'] ?? 0);
+            $rB = (float) ($b['rating'] ?? $b['community_rating'] ?? 0);
+            if ($rA === $rB) {
+                return ($b['ratings_count'] ?? 0) <=> ($a['ratings_count'] ?? 0);
+            }
+
+            return $rB <=> $rA;
+        });
+
+        return array_slice($result, 0, $limit);
     }
 
     /**

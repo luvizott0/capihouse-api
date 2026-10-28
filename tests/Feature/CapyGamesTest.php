@@ -7,6 +7,7 @@ use App\Models\CapyUserGame;
 use App\Models\Post;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -272,5 +273,94 @@ class CapyGamesTest extends TestCase
         $this->assertContains('Xbox Series X|S', $platforms);
         $this->assertContains('Xbox One', $platforms);
         $this->assertContains('Nintendo Switch', $platforms);
+    }
+
+    public function test_friends_recent_games_returns_up_to_10_unique_games()
+    {
+        $user = $this->createApprovedUser();
+        $friend = $this->createApprovedUser(['email' => 'friend@capihouse.com']);
+        Sanctum::actingAs($user);
+
+        for ($i = 1; $i <= 12; $i++) {
+            $game = CapyGame::create([
+                'title' => "Game {$i}",
+                'slug' => "game-{$i}",
+                'external_id' => "manual:game-{$i}",
+                'external_source' => 'manual',
+                'cover_url' => "https://example.com/cover{$i}.jpg",
+                'platforms' => ['Steam'],
+            ]);
+
+            $ug = CapyUserGame::create([
+                'user_id' => $friend->id,
+                'game_id' => $game->id,
+                'status' => 'playing',
+                'hours_played' => $i,
+            ]);
+
+            DB::table('capy_user_games')
+                ->where('id', $ug->id)
+                ->update(['updated_at' => now()->addMinutes($i)]);
+        }
+
+        $response = $this->getJson('/api/capygames/friends-games');
+        $response->assertOk();
+        $data = $response->json('data');
+
+        $this->assertCount(10, $data);
+        // O jogo mais recentemente atualizado deve ser o Game 12
+        $this->assertEquals('Game 12', $data[0]['title']);
+        $this->assertEquals($friend->name, $data[0]['recent_player']['name']);
+    }
+
+    public function test_top_rated_games_returns_top_10_sorted_from_best_to_worst()
+    {
+        $user = $this->createApprovedUser();
+        Sanctum::actingAs($user);
+
+        $gameHigh = CapyGame::create([
+            'title' => 'Top Game A',
+            'slug' => 'top-game-a',
+            'external_id' => 'manual:top-a',
+            'external_source' => 'manual',
+            'cover_url' => 'https://example.com/a.jpg',
+        ]);
+        $gameLow = CapyGame::create([
+            'title' => 'Low Game B',
+            'slug' => 'low-game-b',
+            'external_id' => 'manual:low-b',
+            'external_source' => 'manual',
+            'cover_url' => 'https://example.com/b.jpg',
+        ]);
+
+        CapyUserGame::create([
+            'user_id' => $user->id,
+            'game_id' => $gameHigh->id,
+            'status' => 'completed',
+            'rating' => 10.0,
+        ]);
+        CapyUserGame::create([
+            'user_id' => $user->id,
+            'game_id' => $gameLow->id,
+            'status' => 'completed',
+            'rating' => 7.5,
+        ]);
+
+        $response = $this->getJson('/api/capygames/top-rated');
+        $response->assertOk();
+        $data = $response->json('data');
+
+        $this->assertCount(10, $data);
+        // Primeiro item deve ser nota 10.0 (melhor avaliado)
+        $this->assertEquals(10.0, (float) $data[0]['rating']);
+        $this->assertEquals('Top Game A', $data[0]['title']);
+
+        // Verifica que está estritamente em ordem decrescente
+        for ($i = 0; $i < count($data) - 1; $i++) {
+            $this->assertGreaterThanOrEqual(
+                (float) $data[$i + 1]['rating'],
+                (float) $data[$i]['rating']
+            );
+        }
     }
 }

@@ -202,6 +202,28 @@ class CapyGamesController extends Controller
     }
 
     /**
+     * Últimos 10 jogos jogados pelos amigos da Capihouse
+     */
+    public function friendsRecentGames(Request $request): JsonResponse
+    {
+        $limit = max(1, min(30, (int) $request->input('limit', 10)));
+        $games = $this->gamesService->getFriendsRecentGames($limit, $request->user()?->id);
+
+        return response()->json(['data' => $games]);
+    }
+
+    /**
+     * Top 10 jogos mais bem avaliados (ordenado estritamente do melhor para o pior)
+     */
+    public function topRatedGames(Request $request): JsonResponse
+    {
+        $limit = max(1, min(30, (int) $request->input('limit', 10)));
+        $games = $this->gamesService->getTopRatedGames($limit);
+
+        return response()->json(['data' => $games]);
+    }
+
+    /**
      * Lista de membros da Capihouse gamers
      */
     public function users(): JsonResponse
