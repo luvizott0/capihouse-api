@@ -12,7 +12,7 @@ class UpdateLastSeenAt
     /**
      * Throttle window in seconds — only updates the DB once per window per user.
      */
-    private const THROTTLE_SECONDS = 60;
+    private const THROTTLE_SECONDS = 30;
 
     public function handle(Request $request, Closure $next): Response
     {

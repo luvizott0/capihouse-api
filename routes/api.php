@@ -100,6 +100,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Users
         Route::get('/users', [UserController::class, 'index']);
         Route::get('/users/online', [UserController::class, 'online']);
+        Route::post('/users/heartbeat', [UserController::class, 'heartbeat']);
         Route::get('/users/{user:username}', [UserController::class, 'show']);
         Route::get('/users/{user:username}/spotify-status', [SpotifyController::class, 'currentlyPlaying']);
         Route::get('/users/{user:username}/music-status', [SpotifyController::class, 'currentlyPlaying']);

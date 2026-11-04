@@ -5,6 +5,22 @@ use App\Models\Group;
 use Illuminate\Support\Facades\Broadcast;
 
 /**
+ * Canal de presença de usuários online em tempo real
+ */
+Broadcast::channel('online', function ($user) {
+    if (! $user) {
+        return false;
+    }
+
+    return [
+        'id' => (int) $user->id,
+        'name' => $user->name,
+        'username' => $user->username,
+        'avatar_url' => $user->avatar_url,
+    ];
+});
+
+/**
  * Canal privado do usuário — autenticação por ID
  * Usado para notificações pessoais.
  */
