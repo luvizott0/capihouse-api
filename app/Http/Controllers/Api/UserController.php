@@ -64,9 +64,24 @@ class UserController extends Controller
     public function online()
     {
         $users = User::whereNotNull('last_seen_at')
-            ->where('last_seen_at', '>=', now()->subMinutes(5))
+            ->where('last_seen_at', '>=', now()->subMinutes(2))
             ->get();
 
         return UserListResource::collection($users);
+    }
+
+    public function heartbeat(Request $request)
+    {
+        $user = $request->user();
+        if ($user) {
+            $user->timestamps = false;
+            $user->last_seen_at = now();
+            $user->save();
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'last_seen_at' => now()->toIso8601String(),
+        ]);
     }
 }
