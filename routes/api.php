@@ -121,6 +121,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/posts/{post}/pin', [PostController::class, 'pin']);
         Route::post('/posts/{post}/unpin', [PostController::class, 'unpin']);
         Route::post('/posts/{post}/like', [PostLikeController::class, 'toggle']);
+        Route::get('/posts/{post}/likes', [PostLikeController::class, 'likers']);
         Route::post('/posts/{post}/poll/vote', [PollController::class, 'vote']);
         Route::get('/posts/{post}/poll/voters', [PollController::class, 'voters']);
         Route::post('/posts/{post}/comments', [PostCommentController::class, 'store']);

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Events\PostLiked;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserListResource;
 use App\Models\Post;
 use App\Models\PostLike;
 use App\Services\NotificationDispatcherService;
@@ -69,5 +70,35 @@ class PostLikeController extends Controller
             'is_liked' => $isLiked,
             'likes_count' => $freshLikesCount,
         ]);
+    }
+
+    public function likers(Post $post)
+    {
+        $userId = auth()->id();
+
+        if ($post->group_id) {
+            $isCreatorOrMember = $post->user_id === $userId ||
+                $post->group()->whereHas('members', fn ($m) => $m->where('users.id', $userId))->exists();
+            if (! $isCreatorOrMember) {
+                return response()->json(['message' => 'Você não tem permissão para visualizar as curtidas deste post.'], 403);
+            }
+        }
+
+        if ($post->event_id) {
+            $isCreatorOrGuest = $post->user_id === $userId ||
+                $post->event()->where(function ($q) use ($userId) {
+                    $q->where('user_id', $userId)
+                        ->orWhereHas('guests', fn ($g) => $g->where('users.id', $userId));
+                })->exists();
+            if (! $isCreatorOrGuest) {
+                return response()->json(['message' => 'Você não tem permissão para visualizar as curtidas deste post.'], 403);
+            }
+        }
+
+        $users = $post->likers()
+            ->orderByPivot('created_at', 'desc')
+            ->get();
+
+        return UserListResource::collection($users);
     }
 }

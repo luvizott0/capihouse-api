@@ -65,6 +65,11 @@ class Post extends Model
         return $this->hasMany(PostLike::class);
     }
 
+    public function likers()
+    {
+        return $this->belongsToMany(User::class, 'post_likes')->withPivot('created_at')->withTimestamps();
+    }
+
     public function hashtags()
     {
         return $this->belongsToMany(Hashtag::class);
