@@ -88,8 +88,13 @@ class EventController extends Controller
             'guests.*' => 'exists:users,id',
         ]);
 
-        $newGuestIds = $request->input('guests');
-        $event->guests()->syncWithoutDetaching($newGuestIds);
+        $existingGuestIds = $event->guests()->pluck('users.id')->map(fn ($id) => (int) $id)->toArray();
+        $rawGuestIds = array_map('intval', (array) $request->input('guests'));
+        $newGuestIds = array_values(array_diff($rawGuestIds, $existingGuestIds));
+
+        $event->guests()->syncWithoutDetaching($rawGuestIds);
+
+        $this->notifyInvitedGuests($event, $newGuestIds, auth()->user());
 
         return response()->json([
             'message' => 'Convidados adicionados com sucesso.',
@@ -152,7 +157,9 @@ class EventController extends Controller
 
         // Guests
         if ($request->has('guests') && is_array($request->input('guests'))) {
-            $event->guests()->sync($request->input('guests'));
+            $guests = array_map('intval', $request->input('guests'));
+            $event->guests()->sync($guests);
+            $this->notifyInvitedGuests($event, $guests, auth()->user());
         }
 
         return response()->json($event->load(['owner', 'guests', 'media']), 201);
@@ -207,8 +214,12 @@ class EventController extends Controller
         if ($request->boolean('clear_guests')) {
             $event->guests()->sync([]);
         } elseif ($request->has('guests')) {
-            $guests = is_array($request->input('guests')) ? $request->input('guests') : [];
+            $previousGuestIds = $event->guests()->pluck('users.id')->map(fn ($id) => (int) $id)->toArray();
+            $guests = array_map('intval', is_array($request->input('guests')) ? $request->input('guests') : []);
             $event->guests()->sync($guests);
+
+            $newGuestIds = array_values(array_diff($guests, $previousGuestIds));
+            $this->notifyInvitedGuests($event, $newGuestIds, auth()->user());
         }
 
         return response()->json($event->load(['owner', 'guests', 'media']));
@@ -273,5 +284,32 @@ class EventController extends Controller
         $event->delete();
 
         return response()->json(['message' => 'Evento excluído com sucesso.']);
+    }
+
+    /**
+     * Dispatch notification to invited guests (excluding the organizer)
+     */
+    protected function notifyInvitedGuests(Event $event, array $guestIds, User $organizer): void
+    {
+        foreach ($guestIds as $guestId) {
+            $guestId = (int) $guestId;
+            if ($guestId !== (int) $organizer->id) {
+                NotificationDispatcherService::send(
+                    recipient: $guestId,
+                    type: 'event_invite',
+                    title: 'Convite para Evento',
+                    content: "{$organizer->name} convidou você para o evento \"{$event->name}\".",
+                    data: [
+                        'event_id' => $event->id,
+                        'event_name' => $event->name,
+                        'user_id' => $organizer->id,
+                        'user_name' => $organizer->name,
+                        'user_username' => $organizer->username,
+                        'user_avatar' => $organizer->avatar_url,
+                    ],
+                    url: '/events/'.$event->id
+                );
+            }
+        }
     }
 }
