@@ -11,7 +11,7 @@ class UserListResource extends JsonResource
     public function toArray(Request $request): array
     {
         $isOnline = $this->last_seen_at !== null
-            && $this->last_seen_at->gte(now()->subMinutes(5));
+            && $this->last_seen_at->gte(now()->subMinutes(2));
 
         return [
             'id' => $this->id,
